@@ -14,7 +14,7 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
   - [Abstract](#abstract)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
-- [Under Construction](#under-construction)
+  - [Running](#running)
 
 ## Installation
 1. Clone this repository:
@@ -32,4 +32,9 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
   pip install -r requirements.txt
   ```
 
-# Under Construction
+## Running 
+1. To train CAVs create a config.yaml file in 'configs/'
+2. Run the script with the following command
+  ```bash
+  python -m scripts.train_cavs --config "configs/config.yaml" --latents "data/activations_train.pth" --labels "data/labels_train.pth" --concepts "data/concept_names.pkl" --save_dir "results"
+  ```
