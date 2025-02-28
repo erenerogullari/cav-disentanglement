@@ -25,7 +25,7 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
 2. Navigate to the repository folder:
    ```bash
    cd cav-disentanglement
-  ```
+   ```
 
 3. Install the required dependencies:
   ```bash
