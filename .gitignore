@@ -1,3 +1,12 @@
+# Hydra outputs directory
+outputs/
+
+# Results directory
+results/
+
+# DS_Store files
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
