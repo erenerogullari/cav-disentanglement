@@ -1,0 +1,18 @@
+train:
+  learning_rate: 0.001
+  num_epochs: 50
+  batch_size: 32
+  train_ratio: 0.9
+  random_seed: 42
+  num_workers: 0
+  device: mps
+cav:
+  alpha: 0.01
+  beta: null
+  n_targets: 50
+  optimal_init: true
+paths:
+  latents: data/latents.pt
+  labels: data/labels.pt
+  concept_names: data/concept_names.pkl
+  save_dir: results

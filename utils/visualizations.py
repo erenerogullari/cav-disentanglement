@@ -85,7 +85,7 @@ def create_similarity_matrix_gif(cos_sims, concepts, auc_scores_hist, filename='
     print(f"GIF saved as {filename}")
 
 
-def plot_training_loss(epochs_range, cav_loss_history, orthogonality_loss_history, save_path=None):
+def plot_training_loss(cav_loss_history, orthogonality_loss_history, save_path=None):
     """
     Plots the classification loss and orthogonality loss over epochs.
 
@@ -96,6 +96,7 @@ def plot_training_loss(epochs_range, cav_loss_history, orthogonality_loss_histor
         save_path (str, optional): Path to save the plot. If None, the plot is shown instead.
     """
     plt.figure(figsize=(10, 6))
+    epochs_range = range(len(cav_loss_history))
     plt.plot(epochs_range, cav_loss_history, color='r', label='CAV Loss')
     plt.plot(epochs_range, orthogonality_loss_history, color='c', label='Orthogonality Loss')
     plt.xlabel('Epochs')

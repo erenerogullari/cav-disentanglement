@@ -5,7 +5,8 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 import copy
-import yaml
+import hydra
+from omegaconf import DictConfig, OmegaConf
 import pickle
 import os
 import shutil
@@ -17,33 +18,7 @@ from utils.sim_matrix import reorder_similarity_matrix
 from utils.visualizations import plot_training_loss, plot_metrics_over_time, plot_cosine_similarity, plot_auc_before_after, plot_uniqueness_before_after
 
 
-# Define command-line arguments
-parser = argparse.ArgumentParser(description="Train CAVs with configuration file.")
-parser.add_argument("--config", type=str, required=True, help="Path to the config file.")
-parser.add_argument("--latents", type=str, required=True, help="Path to the latent variables (.pt file).")
-parser.add_argument("--labels", type=str, required=True, help="Path to the labels (.pt file).")
-parser.add_argument("--concepts", type=str, required=True, help="Path to the concept names (.pkl file).")
-parser.add_argument("--save_dir", type=str, required=True, help="Path to the save directory.")
-args = parser.parse_args()
-
-# Load config file
-def load_config(config_path):
-    _, ext = os.path.splitext(config_path)
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
-    
-config = load_config(args.config)
-
-# Dynamically pick the directory name for saving the results
-model_name = f"cavs:alpha{config['cav']['alpha']}_beta{config['cav']['beta']}_lr{config['train']['learning_rate']}" if config['cav']['beta'] != 'None' else f"cavs:alpha{config['cav']['alpha']}_lr{config['train']['learning_rate']}"
-save_dir = os.path.join(args.save_dir, model_name)
-os.makedirs(save_dir, exist_ok=True)
-os.makedirs(os.path.join(save_dir, 'metrics'), exist_ok=True)
-os.makedirs(os.path.join(save_dir, 'media'), exist_ok=True)
-shutil.copy(args.config, os.path.join(save_dir, 'config.yaml'))
-
 def train_epoch(dataloader, cav_model, weights, optimizer, device):
-    n_concepts, n_features = cavs.shape[-2], cavs.shape[-1]
     
     epoch_cav_loss = 0.0
     epoch_orthogonality_loss = 0.0
@@ -72,7 +47,7 @@ def train_epoch(dataloader, cav_model, weights, optimizer, device):
     
     return avg_cav_loss, avg_orthogonality_loss
 
-def eval_epoch(test_data, test_labels, cav_model):
+def eval_epoch(test_data, test_labels, cav_model, device):
     cavs, _ = cav_model.get_params()
     n_concepts, n_features = cavs.shape[-2], cavs.shape[-1]
     test_data = test_data.to(device)
@@ -103,9 +78,9 @@ def eval_epoch(test_data, test_labels, cav_model):
     
     return metrics
 
-def train_test_split(tensor_dataset):
+def train_test_split(tensor_dataset, train_ratio):
     total_size = len(tensor_dataset)
-    train_size = int(total_size * config['train']['train_ratio'])
+    train_size = int(total_size * train_ratio)
     test_size = total_size - train_size
     train_dataset, test_dataset = random_split(tensor_dataset, [train_size, test_size])
     print(f"Total samples: {total_size}")
@@ -113,11 +88,10 @@ def train_test_split(tensor_dataset):
     print(f"Testing samples: {test_size}")
     return train_dataset, test_dataset
 
-def initialize_weights(C, labels):
-    weights = config['cav']['alpha'] * torch.ones_like(C, device=device)
-    
-    beta = config['cav']['beta']
-    if beta != 'None':
+def initialize_weights(C, labels, alpha, beta, n_targets, device):
+    weights = alpha * torch.ones_like(C, device=device)
+
+    if beta != None:
         # Extract the rows and cols
         similarities = torch.triu(C.abs(), diagonal=1).clone()
         sorted_indices = torch.argsort(similarities.flatten(), descending=True)
@@ -131,7 +105,7 @@ def initialize_weights(C, labels):
                    set(torch.where(labels[:, j] == 1)[0].tolist()))) != 0:
                 selected_pairs.append((i, j))
                 
-            if len(selected_pairs) == config['cav']['n_targets']:
+            if len(selected_pairs) == n_targets:
                 break
         
         # Assign weights for the selected pairs
@@ -141,7 +115,7 @@ def initialize_weights(C, labels):
 
     return weights
 
-def save_results(cavs, metrics):
+def save_results(cavs, metrics, save_dir):
     cavs_normalized = cavs / torch.norm(cavs, dim=1, keepdim=True)
     torch.save(cavs_normalized, f'{save_dir}/cavs.pt')
 
@@ -163,10 +137,9 @@ def save_results(cavs, metrics):
 
     print('Model and results saved.')
 
-def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts):
+def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts, save_dir):
     # Plot Training and Orthogonality Loss
-    plot_training_loss(
-        epochs_range=range(config['train']['num_epochs']+1), 
+    plot_training_loss( 
         cav_loss_history=metrics['cav_loss_hist'], 
         orthogonality_loss_history=metrics['orth_loss_hist'], 
         save_path=f"{save_dir}/media/training_loss.png"
@@ -175,7 +148,7 @@ def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts):
     # Plot Metrics History
     cav_performance_history = np.mean(np.array(metrics['auc_hist']), axis=1)
     cav_uniqueness_history = np.mean(np.array(metrics['uniqueness_hist']), axis=1)
-    epochs_logged = list(range(0, config['train']['num_epochs']+1, 10))
+    epochs_logged = [10*i for i in range(len(cav_performance_history))]
     plot_metrics_over_time(
         epochs_logged=epochs_logged,
         cav_performance_history=cav_performance_history,
@@ -234,24 +207,41 @@ def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts):
     print(f"Plots saved in '{save_dir}/media'.")
 
 
-if __name__ == "__main__":
+@hydra.main(version_base=None, config_path="../configs/train_cavs", config_name="config.yaml")
+def main(config: DictConfig) -> None:
 
-    device = config['train']['device']
+    # Set up the device and seed from the config
+    device = config.train.device
     print(f"Using device: {device}")
-    torch.manual_seed(config['train']['random_seed'])
+    torch.manual_seed(config.train.random_seed)
 
-    # Variables
-    x_latent = torch.load(args.latents, weights_only=True)      # Shape: (num_samples, n_features)
-    labels = torch.load(args.labels, weights_only=True)         # Shape: (num_samples, n_concepts)
+    # Paths to data variables
+    model_name = f"cavs:alpha{config.cav.alpha}_beta{config.cav.beta}_n_targets{config.cav.n_targets}_lr{config.train.learning_rate}" if config.cav.beta is not None else f"cavs:alpha{config.cav.alpha}_lr{config.train.learning_rate}"
+    original_cwd = hydra.utils.get_original_cwd()
+    latents_path = os.path.join(original_cwd, config.paths.latents)
+    labels_path = os.path.join(original_cwd, config.paths.labels)
+    concept_names_path = os.path.join(original_cwd, config.paths.concept_names)
+    save_dir = os.path.join(original_cwd, "results", model_name)
+    os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(os.path.join(save_dir, 'metrics'), exist_ok=True)
+    os.makedirs(os.path.join(save_dir, 'media'), exist_ok=True)
+
+    # Load the data variables
+    x_latent = torch.load(latents_path, weights_only=True)      # Shape: (num_samples, n_features)
+    labels = torch.load(labels_path, weights_only=True)         # Shape: (num_samples, n_concepts)
     labels = labels.clamp(min=0)
-    with open(args.concepts, "rb") as f:
-        concepts = pickle.load(f)                                                                   
+    with open(concept_names_path, "rb") as f:
+        concepts_names = pickle.load(f)                                                                   
+
+    # (Optional) Save the current config for reproducibility
+    with open(os.path.join(save_dir, 'config.yaml'), "w") as f:
+        f.write(OmegaConf.to_yaml(config))
 
     # Prepare training data
     tensor_ds = TensorDataset(x_latent, labels)
     n_features, n_concepts = x_latent.shape[1], labels.shape[1]
-    train_dataset, test_dataset = train_test_split(tensor_ds)
-    train_loader = DataLoader(train_dataset, batch_size=config['train']['batch_size'], shuffle=True, num_workers=config['train']['num_workers'])
+    train_dataset, test_dataset = train_test_split(tensor_ds, config.train.train_ratio)
+    train_loader = DataLoader(train_dataset, batch_size=config.train.batch_size, shuffle=True, num_workers=config.train.num_workers)
 
     # Prepare test data
     test_data, test_labels = zip(*test_dataset)
@@ -263,7 +253,7 @@ if __name__ == "__main__":
     train_labels = torch.stack(train_labels)
     train_x_latent = torch.stack(train_x_latent)
     cavs_original = compute_all_cavs(train_x_latent.float(), train_labels.float())
-    if config['cav']['optimal_init']:
+    if config.cav.optimal_init:
         cavs = copy.deepcopy(cavs_original).to(device) 
     else:
         cavs = torch.randn(n_concepts, n_features)
@@ -275,10 +265,10 @@ if __name__ == "__main__":
     # Similarity matrix and weights initialization
     C = cavs_original @ cavs_original.T
     _, order = reorder_similarity_matrix(C.cpu().numpy())
-    weights = initialize_weights(C, labels)
+    weights = initialize_weights(C, labels, config.cav.alpha, config.cav.beta, config.cav.n_targets, device=device)
 
     # Define optimizer
-    optimizer = optim.SGD(cav_model.parameters(), lr=config['train']['learning_rate'])
+    optimizer = optim.SGD(cav_model.parameters(), lr=config.train.learning_rate)
 
     # Initialize metrics storage
     cav_loss_history = []
@@ -294,7 +284,7 @@ if __name__ == "__main__":
     early_exit_epoch = 0
 
     ### MAIN LOOP ###
-    for epoch in tqdm(range(config['train']['num_epochs']+1), desc="Epochs"):
+    for epoch in tqdm(range(config.train.num_epochs+1), desc="Epochs"):
         # Train for one epoch
         epoch_cav_loss, epoch_orth_loss = train_epoch(train_loader, cav_model, weights, optimizer, device)
         cav_loss_history.append(epoch_cav_loss)
@@ -302,7 +292,7 @@ if __name__ == "__main__":
         
         # Evaluation every 10 epochs
         if epoch % 10 == 0:
-            metrics = eval_epoch(test_data, test_labels, cav_model)
+            metrics = eval_epoch(test_data, test_labels, cav_model, device)
             auc_scores_history.append(metrics['auc_scores'])
             uniqueness_history.append(metrics['uniqueness'])
             avg_precision_hist.append(metrics['avg_precision'])
@@ -327,5 +317,9 @@ if __name__ == "__main__":
         'precision_hist': avg_precision_hist,
         'early_exit_epoch':  early_exit_epoch,
     }
-    save_results(best_cavs, final_metrics)
-    save_plots(best_cavs, cavs_original, final_metrics, x_latent, labels, concepts)
+    save_results(best_cavs, final_metrics, save_dir)
+    save_plots(best_cavs, cavs_original, final_metrics, x_latent, labels, concepts_names, save_dir)
+
+
+if __name__ == "__main__":
+    main()
