@@ -10,5 +10,5 @@ model:
   n_class: 2
 
 inference:
-  device: "mps"
+  device: "cuda"
   batch_size: 32
