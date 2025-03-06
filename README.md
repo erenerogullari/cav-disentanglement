@@ -89,7 +89,7 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
    ```yaml
     dataset:
       dataset: "celeba"
-      path: "/Users/erogullari/datasets/"
+      path: "path_to_dataset"
       img_size: 224
 
     model:
