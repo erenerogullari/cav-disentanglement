@@ -14,6 +14,6 @@ cav:
   optimal_init: true
 
 paths:
-  latents: "data/latents.pt"
-  labels: "data/labels.pt"
-  concept_names: "data/concept_names.pkl"
+  latents: "variables/latents.pt"
+  labels: "variables/labels.pt"
+  concept_names: "variables/concept_names.pkl"

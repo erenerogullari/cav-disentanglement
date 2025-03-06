@@ -4,6 +4,9 @@ outputs/
 # Results directory
 results/
 
+# Model checkpoints
+checkpoints/
+
 # DS_Store files
 .DS_Store
 
