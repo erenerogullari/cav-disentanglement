@@ -1,0 +1,14 @@
+dataset:
+  dataset: "celeba"
+  path: "/Users/erogullari/datasets/"
+  img_size: 224
+
+model:
+  model: "vgg16"
+  layer: "features.28"
+  cav_mode: "max"
+  n_class: 2
+
+inference:
+  device: "mps"
+  batch_size: 32

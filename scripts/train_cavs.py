@@ -3,14 +3,11 @@ import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader, random_split
 import numpy as np
 from tqdm import tqdm
-import pickle
 import copy
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import pickle
 import os
-import shutil
-import argparse
 from models.signal_cav import SignalCAV
 from utils.cav import compute_all_cavs
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance
