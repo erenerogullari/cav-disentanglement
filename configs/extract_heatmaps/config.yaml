@@ -1,0 +1,19 @@
+dataset:
+  dataset: "celeba"
+  path: "/Users/erogullari/datasets/"
+  img_size: 224
+
+model:
+  model: "vgg16"
+  layer: "features.28"
+  n_class: 2
+
+attribution:
+  device: "mps"
+  random_seed: 42
+  n_samples_each: 5
+  composite:
+    _target_: zennit.composites.EpsilonPlusFlat
+
+cavs:
+  path: "results/cavs:alpha0.1_lr0.001"

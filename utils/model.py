@@ -9,6 +9,14 @@ class FlattenAndMaxPool(nn.Module):
         x = x.flatten(start_dim=2)   # Flatten to shape [-1, C, H, W] -> [-1, C, H*W]
         x, _ = torch.max(x, dim=2)   # Max along the last dimension, shape [-1, C]
         return x
+    
+def truncate_and_extend(model_name, model: nn.Module, layer_name: str, pooling_module: nn.Module, W: torch.Tensor) -> nn.Module:
+    if model_name == 'vgg16':
+        return truncate_and_extend_vgg16(model, layer_name, pooling_module, W)
+    elif model_name == 'resnet18':
+        truncate_and_extend_resnet18(model, pooling_module, W)
+    else:
+        raise NotImplementedError()
 
 # Helper fn to truncate and extend the model to have CAVs on the last layer
 def truncate_and_extend_vgg16(model: nn.Module, layer_name: str, pooling_module: nn.Module, W: torch.Tensor) -> nn.Module :
@@ -59,17 +67,6 @@ def truncate_and_extend_vgg16(model: nn.Module, layer_name: str, pooling_module:
     return model
 
 def truncate_and_extend_resnet18(model: nn.Module, pooling_module: nn.Module, W: torch.Tensor) -> nn.Module:
-    """
-    Truncates a ResNet18 model at a specified layer and extends it with a linear layer.
-    
-    Args:
-        model (nn.Module): The ResNet18 model to modify.
-        pooling_module (nn.Module): A pooling module to apply after truncation (e.g., FlattenAndMaxPool).
-        W (torch.Tensor): Weight matrix for the linear layer to extend with.
-    
-    Returns:
-        nn.Module: The modified ResNet18 model.
-    """
     # Deep copy the model
     model = copy.deepcopy(model)
 
