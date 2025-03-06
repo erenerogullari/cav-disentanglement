@@ -9,7 +9,7 @@ model:
   n_class: 2
 
 attribution:
-  device: "mps"
+  device: "cuda"
   random_seed: 42
   n_samples_each: 5
   composite:
