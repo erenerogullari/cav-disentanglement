@@ -179,7 +179,7 @@ def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts, save_di
     plot_auc_before_after(
         auc_before=sorted_auc_before,
         auc_after=sorted_auc_after,
-        concepts=concepts,  # List of concept names
+        concepts=sorted_concepts_auc,  # List of concept names
         save_path=f"{save_dir}/media/auc_before_after.png"
     )
 
