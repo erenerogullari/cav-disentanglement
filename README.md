@@ -37,7 +37,7 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
 
 
 ## Extracting Latent Activations
-1. Add the pre-trained model checkpoint under `checkpoints/checkpoint_{model}_{dataset}.pth`.
+1. Add the pre-trained model checkpoint under `checkpoints/checkpoint_{model}_{dataset}.pth`. Checkpoints used in the paper can be found [here](https://drive.google.com/drive/folders/1Vv_Dq-1hDcYl-A-TuXNH8jRDKe9-BR-k?usp=sharing).
 2. Specify the dataset and model configuration in `configs/extract_latents/config.yaml`:
    ```yaml
    dataset:
