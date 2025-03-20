@@ -197,7 +197,7 @@ def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts, save_di
     plot_uniqueness_before_after(
         uniqueness_before=sorted_uniqueness_before,
         uniqueness_after=sorted_uniqueness_after,
-        concepts=concepts, 
+        concepts=sorted_concepts_unq, 
         save_path=f"{save_dir}/media/uniqueness_before_after.png"
     )
 
