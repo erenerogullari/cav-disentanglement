@@ -18,6 +18,7 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
   - [Extracting Latent Activations](#extracting-latent-activations)
   - [Training / Fine-tuning CAVs](#training--fine-tuning-cavs)
   - [Extracting Heatmaps (for CelebA only)](#extracting-heatmaps-for-celeba-only)
+  - [Alternative: Jupyter Notebook](#alternative-jupyter-notebook)
 
 ## Installation
 1. Clone this repository:
@@ -111,3 +112,6 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
    ```bash
     python -m scripts.extract_heatmaps
    ```
+
+## Alternative: Jupyter Notebook
+Alternatively, one can go over the content in `cav_disentanglement.ipynb` to get an overview of the method without running the scripts.
