@@ -1,7 +1,7 @@
 <div align="center">
 <h1>Post-Hoc Concept Disentanglement: From Correlated to Isolated Concept Representations</h1>
 
-[![Python](https://img.shields.io/badge/python-3.11.10-blue)](https://www.python.org/) &nbsp;&nbsp; [![PyTorch](https://img.shields.io/badge/PyTorch-2.5.1-brightgreen)](https://pytorch.org/)
+[![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/) &nbsp;&nbsp; [![PyTorch](https://img.shields.io/badge/PyTorch-2.5-brightgreen)](https://pytorch.org/)
 </div>
 
 ## Description
