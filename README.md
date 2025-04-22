@@ -1,5 +1,8 @@
-# <p align="center">Post-Hoc Concept Disentanglement: From Correlated to Isolated Concept Representations</p>
-<p align="center">PyTorch Implementation</p>
+<div align="center">
+<h1>Post-Hoc Concept Disentanglement: From Correlated to Isolated Concept Representations</h1>
+
+[![Python](https://img.shields.io/badge/python-3.11.10-blue)](https://www.python.org/) &nbsp;&nbsp; [![PyTorch](https://img.shields.io/badge/PyTorch-2.5.1-brightgreen)](https://pytorch.org/)
+</div>
 
 ## Description
 This repository provides tools to train and analyze Concept Activation Vectors (CAVs) under orthogonality constraints designed to encourage disentanglement among concepts. It includes training scripts, metrics, and visualizations to evaluate disentanglement performance. For more details about the method please see the paper **"Post-Hoc Concept Disentanglement: From Correlated to Isolated Concept Representations"**. 
@@ -11,14 +14,13 @@ To address this issue, we introduce a post-hoc concept disentanglement method th
 ![Main Figure](media/main_figure.png "Main Figure")
 
 ## Table of Contents
-- [Post-Hoc Concept Disentanglement: From Correlated to Isolated Concept Representations](#post-hoc-concept-disentanglement-from-correlated-to-isolated-concept-representations)
-  - [Description](#description)
-  - [Table of Contents](#table-of-contents)
-  - [Installation](#installation)
-  - [Extracting Latent Activations](#extracting-latent-activations)
-  - [Training / Fine-tuning CAVs](#training--fine-tuning-cavs)
-  - [Extracting Heatmaps (for CelebA only)](#extracting-heatmaps-for-celeba-only)
-  - [Alternative: Jupyter Notebook](#alternative-jupyter-notebook)
+- [Description](#description)
+- [Table of Contents](#table-of-contents)
+- [Installation](#installation)
+- [Extracting Latent Activations](#extracting-latent-activations)
+- [Training / Fine-tuning CAVs](#training--fine-tuning-cavs)
+- [Extracting Heatmaps (for CelebA only)](#extracting-heatmaps-for-celeba-only)
+- [Alternative: Jupyter Notebook](#alternative-jupyter-notebook)
 
 ## Installation
 1. Clone this repository:
