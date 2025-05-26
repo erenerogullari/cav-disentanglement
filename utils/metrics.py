@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from sklearn.metrics import f1_score, roc_auc_score, auc, roc_curve, average_precision_score
+from typing import Literal, Union
 
 
 def get_accuracy(y_hat, y, se=False):
@@ -83,6 +84,7 @@ def get_auc(y_hat, y):
     
     return auc_score
 
+
 def get_avg_precision(y_hat, y):
     """
     Compute the Average Precision (AP) score for multi-label binary classification.
@@ -107,48 +109,46 @@ def get_avg_precision(y_hat, y):
     return avg_precision
 
 
-def compute_auc_performance(cavs, activations, labels):
-    """
-    Compute the AUC-ROC scores for each concept based on cosine similarity between CAVs and activations.
-
-    Args:
-        cavs (torch.Tensor): Concept Activation Vectors with shape (k, d), where k is the number of concepts
-                             and d is the feature dimension.
-        activations (torch.Tensor): Model activations with shape (batch_size, d).
-        labels (torch.Tensor): Ground truth labels for the concepts with shape (batch_size, k), where k is the
-                               number of concepts.
-
-    Returns:
-        np.ndarray: AUC-ROC scores for each concept as a NumPy array of shape (k,).
-    """
+def compute_auc_performance(
+    cavs: torch.Tensor,
+    activations: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    average: Literal["micro", "macro", "weighted", "samples", None] = None,
+    eps: float = 1e-12,
+    ) -> Union[np.ndarray, float]:
     # cavs          (k, d)
     # activations   (batch_size, d)
     # labels        (batch_size, k)
 
-    # Move to cpu
     cavs = cavs.to('cpu')
     activations = activations.to('cpu')
     labels = labels.to('cpu')
 
-    # Normalize the CAVs and activations for cosine similarity
-    cavs_normalized = cavs / cavs.norm(dim=1, keepdim=True)  # Shape: (k, d)
-    activations_normalized = activations / activations.norm(dim=1, keepdim=True)  # Shape: (batch_size, d)
-    
-    auc_scores = []
-    
-    # Iterate over each concept
-    for concept_idx in range(cavs.shape[0]):
-        # Compute cosine similarity for the current concept
-        cosine_sim = activations_normalized @ cavs_normalized[concept_idx]  # Shape: (batch_size,)
-        
-        # Get the true labels for the current concept
-        true_labels = labels[:, concept_idx].cpu().numpy()  # Shape: (batch_size,)
-        
-        # Compute AUC for the current concept
-        auc = roc_auc_score(true_labels, cosine_sim.cpu().numpy())
-        auc_scores.append(auc)
-    
-    return np.array(auc_scores)
+    with torch.no_grad():
+        cavs_normalized = torch.nn.functional.normalize(cavs, dim=1, eps=eps)
+        activations_normalized = torch.nn.functional.normalize(activations, dim=1, eps=eps)
+        scores = activations_normalized @ cavs_normalized.T       # (batch_size, k)
+
+    y_true  = labels.cpu().numpy()
+    y_score = scores.cpu().numpy()
+
+    # Handle columns that contain only one class to avoid sklearn errors
+    single_class = (y_true.sum(axis=0) == 0) | (y_true.sum(axis=0) == y_true.shape[0])
+
+    if average is None:                      # per‑concept vector (default, back‑compat)
+        aucs = np.full(y_true.shape[1], np.nan)
+        if (~single_class).any():
+            aucs[~single_class] = roc_auc_score(
+                y_true[:, ~single_class],
+                y_score[:, ~single_class],
+                average=None,
+            )
+        return aucs
+    else:                                    # any of “micro|macro|weighted|samples”
+        # For micro‑/samples‑averages sklearn itself copes with single‑class columns
+        return roc_auc_score(y_true, y_score, average=average)
+
 
 def get_uniqueness(cavs: torch.Tensor):
     """
@@ -176,3 +176,4 @@ def get_uniqueness(cavs: torch.Tensor):
     uniqueness = 1 - np.average(np.abs(cos_sim_matrix), axis=0) + np.abs(np.diag(cos_sim_matrix)) / n
 
     return uniqueness
+
