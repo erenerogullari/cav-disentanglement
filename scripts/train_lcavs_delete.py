@@ -5,36 +5,15 @@ import numpy as np
 from tqdm import tqdm
 import copy
 import hydra
-from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import pickle
 import os
-from models import SignalCAV, LinearCAV
+from models.linear_cav import LinearCAV
 from utils.cav import compute_all_cavs
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance
 from utils.sim_matrix import reorder_similarity_matrix
 from utils.visualizations import plot_training_loss, plot_metrics_over_time, plot_cosine_similarity, plot_auc_before_after, plot_uniqueness_before_after
 
-init_dict = {
-    "models.SignalCAV": "checkpoints/scav_vgg16_celeba.pth",
-    "models.LinearCAV": "checkpoints/lcav_vgg16_celeba.pth",
-}
-
-def name_model(config):
-    if  config.cav.model._target_ == "models.SignalCAV":
-        model_name = f"cavs-signal:alpha{config.cav.alpha}"
-    elif config.cav.model._target_ == "models.LinearCAV":
-        model_name = f"cavs-linear:alpha{config.cav.alpha}"
-    else:
-        raise ValueError(f"Unknown CAV model: {config.cav.model._target_}")
-
-    if config.cav.beta is not None:
-        model_name += f"_beta{config.cav.beta}_n_targets{config.cav.n_targets}"
-
-    # model_name += f"_lr{config.train.learning_rate}_diffae"
-    model_name += f"_lr{config.train.learning_rate}_diffae"
-
-    return model_name
 
 def train_epoch(dataloader, cav_model, weights, optimizer, device):
     
@@ -45,7 +24,7 @@ def train_epoch(dataloader, cav_model, weights, optimizer, device):
 
         # Move data to device
         x_batch = x_batch.to(device)
-        labels_batch = labels_batch.to(device).clamp(min=0)
+        labels_batch = labels_batch.to(device)
 
         # Forward
         cav_loss, orthogonality_loss = cav_model.train_step(x_batch, labels_batch, weights)
@@ -234,7 +213,7 @@ def main(config: DictConfig) -> None:
     torch.manual_seed(config.train.random_seed)
 
     # Paths to data variables
-    model_name = name_model(config)
+    model_name = f"cavs-linear:alpha{config.cav.alpha}_beta{config.cav.beta}_n_targets{config.cav.n_targets}_lr{config.train.learning_rate}" if config.cav.beta is not None else f"cavs-linear:alpha{config.cav.alpha}_lr{config.train.learning_rate}"
     original_cwd = hydra.utils.get_original_cwd()
     latents_path = os.path.join(original_cwd, config.paths.latents)
     labels_path = os.path.join(original_cwd, config.paths.labels)
@@ -267,25 +246,21 @@ def main(config: DictConfig) -> None:
     test_labels = torch.stack(test_labels).to(device) 
 
     # CAVs Initialization
-    # train_x_latent, train_labels = zip(*train_dataset)
-    # train_labels = torch.stack(train_labels)
-    # train_x_latent = torch.stack(train_x_latent)
-    # cavs_original = compute_all_cavs(train_x_latent.float(), train_labels.float())
+    train_x_latent, train_labels = zip(*train_dataset)
+    train_labels = torch.stack(train_labels)
+    train_x_latent = torch.stack(train_x_latent)
+    cavs_original = compute_all_cavs(train_x_latent.float(), train_labels.float())
 
-    # CAV Initialization
-    cav_model = instantiate(config.cav.model, n_concepts=n_concepts, n_features=n_features)
-    if config.cav.optimal_init:
-        cav_model.load_state_dict(torch.load(init_dict[config.cav.model._target_], weights_only=True))
-    cav_model = cav_model.to(device)
+    # CAV model
+    cav_model = LinearCAV(n_concepts, n_features, device=device)
 
     # Similarity matrix and weights initialization
-    cavs_original = torch.load(init_dict[config.cav.model._target_], weights_only=True)["weights"].squeeze(0)
     C = cavs_original @ cavs_original.T
     _, order = reorder_similarity_matrix(C.cpu().numpy())
     weights = initialize_weights(C, labels, config.cav.alpha, config.cav.beta, config.cav.n_targets, device=device)
 
     # Define optimizer
-    optimizer = optim.SGD(cav_model.parameters(), lr=config.train.learning_rate)
+    optimizer = optim.SGD([cav_model.weights, cav_model.biases], lr=config.train.learning_rate)
 
     # Initialize metrics storage
     cav_loss_history = []
@@ -295,8 +270,8 @@ def main(config: DictConfig) -> None:
     avg_precision_hist = []
 
     # Early exit variables
-    best_uniqueness = 0.0
-    uniqueness_epsilon = 0.01
+    # best_uniqueness = 0.0
+    # uniqueness_epsilon = 0.01
     best_auc = 0.0
     auc_epsilon = 0.01
     best_cavs = None
@@ -321,14 +296,14 @@ def main(config: DictConfig) -> None:
             tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
             tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}")
 
-            if (config.cav.exit_criterion == "orthogonality" and mean_uniqueness > best_uniqueness + uniqueness_epsilon) or (config.cav.exit_criterion == "auc" and mean_auc > best_auc + auc_epsilon):
-                best_uniqueness = mean_uniqueness
+            # if mean_uniqueness > best_uniqueness + uniqueness_epsilon:
+            #     best_uniqueness = mean_uniqueness
+            #     early_exit_epoch = epoch
+            #     best_cavs, _ = cav_model.get_params()
+            if mean_auc > best_auc + auc_epsilon:
                 best_auc = mean_auc
                 early_exit_epoch = epoch
                 best_cavs = cav_model.get_params()[0].detach()
-
-                #! DELETE
-                cav_model.save_state_dict(save_dir)
 
 
     # Save the results

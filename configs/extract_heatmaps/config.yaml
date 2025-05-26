@@ -9,11 +9,11 @@ model:
   n_class: 2
 
 attribution:
-  device: "cuda"
+  device: "mps"
   random_seed: 42
   n_samples_each: 5
   composite:
     _target_: zennit.composites.EpsilonPlusFlat
 
 cavs:
-  path: "results/cavs:alpha0.1_lr0.001"
+  path: "results/cavs-linear:alpha10_lr0.1"

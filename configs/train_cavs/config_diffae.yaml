@@ -1,6 +1,6 @@
 train:
   learning_rate: 0.1
-  num_epochs: 100
+  num_epochs: 300
   batch_size: 32
   train_ratio: 0.9
   random_seed: 42
@@ -9,8 +9,8 @@ train:
 
 cav:
   model:
-    _target_: models.LinearCAV  # LinearCAV or SignalCAV
-  alpha: 1
+    _target_: models.LinearCAV  # LinearCAV or SignalCAV  
+  alpha: 0
   beta: null          
   n_targets: 50     
   optimal_init: false
