@@ -2,6 +2,8 @@ import logging
 import torch
 from models.resnet import get_resnet18, get_resnet34, get_resnet50, get_resnet_canonizer
 from models.vgg import get_vgg16, get_vgg16_bn, get_vgg11, get_vgg11_bn, get_vgg13_bn, get_vgg13, get_vgg_canonizer
+from models.linear_cav import LinearCAV
+from models.signal_cav import SignalCAV
 
 MODELS = {
     "vgg16": get_vgg16,

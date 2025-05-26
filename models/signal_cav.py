@@ -8,11 +8,11 @@ from collections import OrderedDict
 class SignalCAV(nn.Module):
 
 
-    def __init__(self, cavs: torch.Tensor, b: torch.Tensor, device) -> None:
+    def __init__(self, n_concepts: int, n_features: int, device='cpu') -> None:
         
         super().__init__()
-        self.weights = nn.Parameter(cavs.unsqueeze(0).to(device))    # (1, n_concepts, n_features)
-        self.biases = nn.Parameter(b.unsqueeze(0).to(device))        # (1, n_concepts, n_features)
+        self.weights = nn.Parameter(torch.randn(1, n_concepts, n_features, device=device))       # (1, n_concepts, n_features)
+        self.biases = nn.Parameter(torch.randn(1, n_concepts, n_features, device=device))        # (1, n_concepts, n_features)
         
 
     def forward(self, labels):
