@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List
 import io
+import os
+import pandas as pd
 from PIL import Image
 from utils.sim_matrix import reorder_similarity_matrix, visualize_before_after_sim_matrices 
 
@@ -243,5 +245,43 @@ def plot_uniqueness_before_after(uniqueness_before, uniqueness_after, concepts, 
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
         plt.close()
+    else:
+        plt.show()
+
+
+def visualize_confusion_trajectories(confusion_matrices, title='Confusion Matrix Trajectories', save_path=None, normalize=True):
+    """
+    Visualizes average TP, TN, FP, FN confusion trajectories together with 95% confidence interval over epochs.
+    Args:
+        confusion_matrices (list): List of confusion matrices for each concept per epoch.
+        title (str): Title of the plot.
+        save_path (str): Path to save the plot. If None, the plot will be shown.
+        normalize (bool): Whether to normalize the confusion matrix values.
+    """
+    records = []
+    for epoch_idx, cm in enumerate(confusion_matrices):
+        n_concepts = cm.shape[0]
+        totals = cm.sum(axis=(1,2)) if normalize else np.ones(n_concepts)
+        for c in range(n_concepts):
+            t = totals[c]
+            records.extend([
+                {'epoch': epoch_idx*10, 'concept': c, 'ratio': 'TP', 'value': cm[c,0,0]/t},
+                {'epoch': epoch_idx*10, 'concept': c, 'ratio': 'TN', 'value': cm[c,1,1]/t},
+                {'epoch': epoch_idx*10, 'concept': c, 'ratio': 'FP', 'value': cm[c,0,1]/t},
+                {'epoch': epoch_idx*10, 'concept': c, 'ratio': 'FN', 'value': cm[c,1,0]/t},
+            ])
+    df = pd.DataFrame(records)
+
+    plt.figure(figsize=(12, 6))
+    sns.set_theme(style="whitegrid")
+    sns.lineplot(data=df, x='epoch', y='value', hue='ratio', markers=True, dashes=False)
+    plt.title(title)
+    plt.xlabel('Epochs')
+    plt.ylabel('Normalized Counts' if normalize else 'Counts')
+    plt.legend()
+    plt.grid(True)
+
+    if save_path:
+        plt.savefig(save_path)
     else:
         plt.show()

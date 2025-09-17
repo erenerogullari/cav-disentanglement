@@ -11,9 +11,9 @@ model:
 attribution:
   device: "mps"
   random_seed: 42
-  n_samples_each: 5
+  n_samples_each: 10
   composite:
     _target_: zennit.composites.EpsilonPlusFlat
 
 cavs:
-  path: "results/cavs-linear:alpha10_lr0.1"
+  path: "results/cavs-signal:alpha0.1_lr0.001"

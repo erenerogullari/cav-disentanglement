@@ -54,5 +54,5 @@ class LinearCAV(nn.Module):
             'weights': self.weights.cpu(),
             'biases': self.biases.cpu()
         })
-        path = f'{dir_name}/state_dict.pt'
+        path = f'{dir_name}/state_dict.pth'
         torch.save(state_dict, path)

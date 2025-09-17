@@ -56,5 +56,5 @@ class SignalCAV(nn.Module):
             'weights': self.weights.squeeze(0).cpu(),
             'biases': self.biases.squeeze(0).cpu()
         })
-        path = f'{dir_name}/state_dict.pt'
+        path = f'{dir_name}/state_dict.pth'
         torch.save(state_dict, path)
