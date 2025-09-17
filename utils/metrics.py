@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-from sklearn.metrics import f1_score, roc_auc_score, auc, roc_curve, average_precision_score
-from typing import Literal, Union
+from sklearn.metrics import f1_score, roc_auc_score, auc, roc_curve, average_precision_score, confusion_matrix
+from typing import Literal, Union, Sequence
 
 
 def get_accuracy(y_hat, y, se=False):
@@ -177,3 +177,84 @@ def get_uniqueness(cavs: torch.Tensor):
 
     return uniqueness
 
+
+def get_confusion_matrices(y_hat, y, threshold=0.5):
+    """
+    Compute the per-concept confusion matrix for binary classification.
+    Args:
+        y_hat (torch.Tensor): Predicted probabilities with shape (batch_size, n_concept), values in [0, 1].
+        y (torch.Tensor): Ground truth labels with shape (batch_size, n_concept), values in {0, 1}.
+    Returns:
+        np.ndarray: Confusion matrix of shape (n_concepts, 2, 2) for binary classification.
+    """
+    n_concepts = y_hat.shape[1]
+
+    # Threshold probabilities to get predicted classes
+    y_pred = (y_hat >= threshold).int()
+    y_true = y.int()
+
+    # Convert to numpy arrays for compatibility with sklearn
+    y_pred_np = y_pred.cpu().numpy()
+    y_true_np = y_true.cpu().numpy()
+
+    # Compute confusion matrices per concept
+    cm = np.zeros((n_concepts, 2, 2), dtype=int)
+    for i in range(n_concepts):
+        cm[i] = confusion_matrix(y_true_np[:, i], y_pred_np[:, i], labels=[0, 1])
+
+    return cm
+
+
+def get_auconf(
+    y_hat: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    n_thresholds: int = 101
+) -> np.ndarray:
+    """
+    Compute the per-concept confusion matrix **integrated over the decision
+    threshold** in the closed interval [0,1].
+
+    The returned matrix is analogous to AUROC: each entry (TN, FP, FN, TP)
+    corresponds to the area under its curve as the threshold sweeps from 0
+    to 1, i.e. the *average* count of that entry across all thresholds.
+
+    Args
+    ----
+    y_hat:
+        Predicted probabilities with shape ``(batch_size, n_concepts)``, values
+        in [0, 1].
+    y:
+        Ground-truth labels with shape ``(batch_size, n_concepts)``, values in
+        {0, 1}.
+    n_thresholds:
+        Number of evenly-spaced thresholds to sample when *thresholds* is
+        *None*.
+
+    Returns
+    -------
+    np.ndarray
+        Integrated confusion matrix of shape ``(n_concepts, 2, 2)`` with
+        floating-point dtype.
+    """
+    # Prepare thresholds
+    thresholds = torch.linspace(0.0, 1.0, steps=n_thresholds, device=y_hat.device, dtype=y_hat.dtype)
+    n_thr = thresholds.numel()
+    n_concepts = y_hat.shape[1]
+    cms = np.zeros((n_thr, n_concepts, 2, 2), dtype=np.float64)
+
+    # Compute confusion matrix for every threshold
+    y_true_np = y.int().cpu().numpy()
+    for t_idx, thr in enumerate(thresholds):
+        y_pred_np = (y_hat >= thr).int().cpu().numpy()
+
+        for i in range(n_concepts):
+            cms[t_idx, i] = confusion_matrix(
+                y_true_np[:, i], y_pred_np[:, i], labels=[0, 1]
+            )
+    
+    # Integrate (trapezoidal rule) over the threshold axis
+    thr_np = thresholds.cpu().numpy()
+    cm_integral = np.trapz(cms, thr_np, axis=0)  # area under each entry‑curve
+
+    return cm_integral

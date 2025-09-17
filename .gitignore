@@ -1,8 +1,10 @@
 # Hydra outputs directory
 outputs/
 
-# Results directory
+# Unnecessary directories
 results/
+media/
+delete/
 
 # Model checkpoints
 checkpoints/

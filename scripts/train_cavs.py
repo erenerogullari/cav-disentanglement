@@ -11,9 +11,9 @@ import pickle
 import os
 from models import SignalCAV, LinearCAV
 from utils.cav import compute_all_cavs
-from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance
+from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
-from utils.visualizations import plot_training_loss, plot_metrics_over_time, plot_cosine_similarity, plot_auc_before_after, plot_uniqueness_before_after
+from utils.visualizations import plot_training_loss, plot_metrics_over_time, plot_cosine_similarity, plot_auc_before_after, plot_uniqueness_before_after, visualize_confusion_trajectories
 
 init_dict = {
     "models.SignalCAV": "checkpoints/scav_vgg16_celeba.pth",
@@ -32,7 +32,7 @@ def name_model(config):
         model_name += f"_beta{config.cav.beta}_n_targets{config.cav.n_targets}"
 
     # model_name += f"_lr{config.train.learning_rate}_diffae"
-    model_name += f"_lr{config.train.learning_rate}_diffae"
+    model_name += f"_lr{config.train.learning_rate}"
 
     return model_name
 
@@ -79,11 +79,14 @@ def eval_epoch(test_data, test_labels, cav_model, device):
         # Predictions and labels for classification metrics
         x_normalized = test_data / test_data.norm(dim=1, keepdim=True) 
         logits = x_normalized @ cavs_normalized.T
-        probs = logits.softmax(dim=1)
+        probs = logits.sigmoid()
 
         # Compute metrics
         metrics['accuracy'] = get_accuracy(probs, test_labels)
         metrics['avg_precision'] = get_avg_precision(probs, test_labels)
+
+        # Confusion matrix
+        metrics['confusion_matrix'] = get_auconf(probs, test_labels)
 
         # Compute AUC for individual concepts
         metrics['auc_scores'] = compute_auc_performance(cavs, test_data, test_labels)
@@ -107,6 +110,9 @@ def train_test_split(tensor_dataset, train_ratio):
     return train_dataset, test_dataset
 
 def initialize_weights(C, labels, alpha, beta, n_targets, device):
+    if alpha == 0:
+        return 0
+    
     weights = alpha * torch.ones_like(C, device=device)
 
     if beta != None:
@@ -146,6 +152,9 @@ def save_results(cavs, metrics, save_dir):
 
     with open(f"{save_dir}/metrics/precision_hist.pkl", "wb") as f:
         pickle.dump(metrics['precision_hist'], f)
+
+    with open(f"{save_dir}/metrics/confusion_matrix_hist.pkl", "wb") as f:
+        pickle.dump(metrics['confusion_matrix_hist'], f)
 
     with open(f"{save_dir}/metrics/cav_loss_hist.pkl", "wb") as f:
         pickle.dump(metrics['cav_loss_hist'], f)
@@ -222,6 +231,9 @@ def save_plots(cavs, cavs_original, metrics, x_latent, labels, concepts, save_di
         save_path=f"{save_dir}/media/uniqueness_before_after.png"
     )
 
+    # Plot Confusion Trajectories
+    visualize_confusion_trajectories(metrics['confusion_matrix_hist'], save_path=f"{save_dir}/media/confusion_trajectories.png")
+
     print(f"Plots saved in '{save_dir}/media'.")
 
 
@@ -247,7 +259,7 @@ def main(config: DictConfig) -> None:
     # Load the data variables
     x_latent = torch.load(latents_path, weights_only=True)      # Shape: (num_samples, n_features)
     labels = torch.load(labels_path, weights_only=True)         # Shape: (num_samples, n_concepts)
-    labels = labels.clamp(min=0)
+    labels = labels.to(torch.float32).clamp(min=0)
     with open(concept_names_path, "rb") as f:
         concepts_names = pickle.load(f)                                                                   
 
@@ -264,13 +276,7 @@ def main(config: DictConfig) -> None:
     # Prepare test data
     test_data, test_labels = zip(*test_dataset)
     test_data = torch.stack(test_data).to(device)        
-    test_labels = torch.stack(test_labels).to(device) 
-
-    # CAVs Initialization
-    # train_x_latent, train_labels = zip(*train_dataset)
-    # train_labels = torch.stack(train_labels)
-    # train_x_latent = torch.stack(train_x_latent)
-    # cavs_original = compute_all_cavs(train_x_latent.float(), train_labels.float())
+    test_labels = torch.stack(test_labels).to(device)
 
     # CAV Initialization
     cav_model = instantiate(config.cav.model, n_concepts=n_concepts, n_features=n_features)
@@ -278,14 +284,24 @@ def main(config: DictConfig) -> None:
         cav_model.load_state_dict(torch.load(init_dict[config.cav.model._target_], weights_only=True))
     cav_model = cav_model.to(device)
 
+    # Debug
+    # scavs_r2r, _ = cav_model.get_params()
+    # print(scavs_r2r.norm(dim=1))
+    # metrics = eval_epoch(test_data, test_labels, cav_model, device)
+    # print(f"Initial AUC: {np.mean(metrics['auc_scores'])}")
+    # print(f"Initial Uniqueness: {np.mean(metrics['uniqueness'])}")
+    
+
     # Similarity matrix and weights initialization
     cavs_original = torch.load(init_dict[config.cav.model._target_], weights_only=True)["weights"].squeeze(0)
+    cavs_original = cavs_original / torch.norm(cavs_original, dim=1, keepdim=True)  # Normalize the CAVs
+    # cavs_original = torch.randn(n_concepts, n_features, device=device)  # Random initialization for testing
     C = cavs_original @ cavs_original.T
-    _, order = reorder_similarity_matrix(C.cpu().numpy())
+    _, order = reorder_similarity_matrix(C.detach().cpu().numpy())
     weights = initialize_weights(C, labels, config.cav.alpha, config.cav.beta, config.cav.n_targets, device=device)
 
     # Define optimizer
-    optimizer = optim.SGD(cav_model.parameters(), lr=config.train.learning_rate)
+    optimizer = optim.Adam(cav_model.parameters(), lr=config.train.learning_rate)
 
     # Initialize metrics storage
     cav_loss_history = []
@@ -293,6 +309,7 @@ def main(config: DictConfig) -> None:
     auc_scores_history = []
     uniqueness_history = []
     avg_precision_hist = []
+    confusion_matrix_history = []
 
     # Early exit variables
     best_uniqueness = 0.0
@@ -304,22 +321,15 @@ def main(config: DictConfig) -> None:
 
     ### MAIN LOOP ###
     for epoch in tqdm(range(config.train.num_epochs+1), desc="Epochs"):
-        # Train for one epoch
-        epoch_cav_loss, epoch_orth_loss = train_epoch(train_loader, cav_model, weights, optimizer, device)
-        cav_loss_history.append(epoch_cav_loss)
-        orthogonality_loss_history.append(epoch_orth_loss)
-        
         # Evaluation every 10 epochs
         if epoch % 10 == 0:
             metrics = eval_epoch(test_data, test_labels, cav_model, device)
             auc_scores_history.append(metrics['auc_scores'])
             uniqueness_history.append(metrics['uniqueness'])
             avg_precision_hist.append(metrics['avg_precision'])
+            confusion_matrix_history.append(metrics['confusion_matrix'])
             mean_auc = np.mean(metrics['auc_scores'])
             mean_uniqueness = np.mean(metrics['uniqueness'])
-
-            tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
-            tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}")
 
             if (config.cav.exit_criterion == "orthogonality" and mean_uniqueness > best_uniqueness + uniqueness_epsilon) or (config.cav.exit_criterion == "auc" and mean_auc > best_auc + auc_epsilon):
                 best_uniqueness = mean_uniqueness
@@ -330,6 +340,15 @@ def main(config: DictConfig) -> None:
                 #! DELETE
                 cav_model.save_state_dict(save_dir)
 
+        # Train for one epoch
+        epoch_cav_loss, epoch_orth_loss = train_epoch(train_loader, cav_model, weights, optimizer, device)
+        cav_loss_history.append(epoch_cav_loss)
+        orthogonality_loss_history.append(epoch_orth_loss)
+        
+        if epoch % 10 == 0:
+            tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
+            tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}")
+
 
     # Save the results
     final_metrics = {
@@ -338,6 +357,7 @@ def main(config: DictConfig) -> None:
         'auc_hist': auc_scores_history,
         'uniqueness_hist': uniqueness_history,
         'precision_hist': avg_precision_hist,
+        'confusion_matrix_hist': confusion_matrix_history,
         'early_exit_epoch':  early_exit_epoch,
     }
     save_results(best_cavs, final_metrics, save_dir)

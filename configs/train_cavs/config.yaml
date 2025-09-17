@@ -1,6 +1,6 @@
 train:
-  learning_rate: 0.1
-  num_epochs: 100
+  learning_rate: 0.00001
+  num_epochs: 500
   batch_size: 32
   train_ratio: 0.9
   random_seed: 42
@@ -10,13 +10,13 @@ train:
 cav:
   model:
     _target_: models.LinearCAV  # LinearCAV or SignalCAV
-  alpha: 1
+  alpha: 10
   beta: null          
   n_targets: 50     
-  optimal_init: false
-  exit_criterion: auc   # auc or orthogonality
+  optimal_init: true
+  exit_criterion: orthogonality   # auc or orthogonality
 
 paths:
-  latents: variables/latents_diffae.pt
-  labels: variables/labels_diffae.pt
-  concept_names: variables/concept_names.pkl
+  latents: variables/latents_celeba_vgg16.pt
+  labels: variables/labels_celeba_vgg16.pt
+  concept_names: variables/concept_names_celeba.pkl
