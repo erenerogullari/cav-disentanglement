@@ -1,0 +1,6 @@
+name: efficientnet_b0
+n_class: 2
+pretrained: True
+ckpt_paths:
+  celeba: null
+  elements: null

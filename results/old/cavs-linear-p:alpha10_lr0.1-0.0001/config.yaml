@@ -1,0 +1,20 @@
+train:
+  learning_rates:
+  - 0.1
+  - 0.0001
+  num_epochs: 900
+  batch_size: 32
+  train_ratio: 0.9
+  random_seed: 42
+  num_workers: 0
+  device: mps
+cav:
+  model:
+    _target_: models.LinearCAV
+  alpha: 10
+  beta: null
+  n_targets: 50
+paths:
+  latents: variables/latents_celeba_vgg16.pt
+  labels: variables/labels_celeba_vgg16.pt
+  concept_names: variables/concept_names_celeba.pkl

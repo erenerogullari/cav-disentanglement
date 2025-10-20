@@ -2,9 +2,9 @@
 outputs/
 
 # Unnecessary directories
-results/
-media/
-delete/
+# results/
+# media/
+# DELETE/
 
 # Model checkpoints
 checkpoints/

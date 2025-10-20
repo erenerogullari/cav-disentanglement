@@ -1,0 +1,21 @@
+defaults:
+  - hardware@train: local
+  - dataset: elements
+  - model: efficientnet_b0
+  - _self_
+
+experiment:
+  name: train_model
+
+task:
+  target_concept_idx: 4    # triangle
+
+train:
+  num_epochs: 20
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  val_split: 0.1
+  test_split: 0.1
+  random_seed: 42
+  log_interval: 10
+  save_best: true

@@ -1,0 +1,22 @@
+_target_: datasets.get_elements_dataset
+data_paths: [""]
+normalize_data: true
+shuffle: true
+image_size: 224
+num_samples: 20000
+element_count: 3
+element_size: 96
+element_size_delta: 24
+element_seed: 2024
+loc_seed: 1337
+name: elements
+
+correlations:
+  - concept_names: ["shape:triangle", "texture:stripes_horizontal"]
+    degree: 0.8
+  - concept_names: ["shape:square", "texture:spots_random"]
+    degree: 0.6
+
+localization:
+  concept_ids: [0, 1, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+  concept_pair_ids: [[9, 38], [4, 31], [8, 38], [16, 9], [16, 8]]
