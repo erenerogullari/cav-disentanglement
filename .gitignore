@@ -2,7 +2,7 @@
 outputs/
 
 # Unnecessary directories
-# results/
+results/
 # media/
 # DELETE/
 
