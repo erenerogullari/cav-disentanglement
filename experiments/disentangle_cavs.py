@@ -4,8 +4,8 @@ import torch
 import logging
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from experiments.lib.train_cavs import train_cavs
-from experiments.lib.localization import localize_concepts, colocalize_concept_pairs
+from experiments.utils.train_cavs import train_cavs
+from experiments.utils.localization import localize_concepts, colocalize_concept_pairs
 
 
 log = logging.getLogger(__name__)

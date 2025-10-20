@@ -680,7 +680,7 @@ if __name__ == "__main__":
     # visualization helpers implemented above.
     try:
         from datasets import get_dataset
-        from experiments.lib.localization import get_localization
+        from experiments.utils.localization import get_localization
         from models import get_fn_model_loader, get_canonizer
     except ModuleNotFoundError as exc:
         raise RuntimeError(

@@ -15,8 +15,8 @@ from datasets import get_dataset
 from utils.cav import compute_cavs
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
-from experiments.lib.utils import name_experiment, initialize_weights, save_results, save_plots
-from experiments.lib.activations import extract_latents
+from experiments.utils.utils import name_experiment, initialize_weights, save_results, save_plots
+from experiments.utils.activations import extract_latents
 
 log = logging.getLogger(__name__)
 
