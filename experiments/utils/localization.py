@@ -19,8 +19,8 @@ from models import get_fn_model_loader, get_canonizer, get_vgg16
 from datasets import get_dataset
 from utils.visualizations import visualize_heatmaps, visualize_heatmap_pair
 from utils.cav import compute_cavs
-from experiments.lib.activations import _get_features, extract_latents
-from experiments.lib.utils import name_experiment
+from experiments.utils.activations import _get_features, extract_latents
+from experiments.utils.utils import name_experiment
 
 log = logging.getLogger(__name__)
 
