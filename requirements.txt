@@ -1,9 +1,9 @@
-torch>=2.5.1
 numpy>=2.0.1
 pandas>=2.2.3
 tqdm>=4.67.1
 zennit>=0.4.6
 zennit-crp>=0.6.0
+timm>=1.0.12
 scikit-learn>=1.5.2
 matplotlib>=3.9.2
 seaborn>=0.13.2
