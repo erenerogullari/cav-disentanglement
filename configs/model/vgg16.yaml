@@ -1,0 +1,6 @@
+name: vgg16
+n_class: 2
+pretrained: True
+ckpt_paths:
+  celeba: checkpoints/checkpoint_vgg16_celeba.pth
+  elements: null

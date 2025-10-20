@@ -5,8 +5,10 @@ import torch
 import torchvision.transforms as T
 from PIL import Image
 from torchvision.datasets import CelebA
-
 from datasets.base_dataset import BaseDataset
+import logging
+
+log = logging.getLogger(__name__)
 
 celeba_augmentation = T.Compose([
     T.RandomHorizontalFlip(p=.5),
@@ -45,7 +47,7 @@ class CelebADataset(BaseDataset):
         
         USE_SUBSET = True
         if USE_SUBSET:
-            print("Using subset")
+            log.info("Using subset.")
             NTH = 10
         else:
             NTH = 1

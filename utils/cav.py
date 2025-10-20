@@ -4,6 +4,7 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import LinearSVC
 import tqdm
+from typing import Tuple
 
 def get_latent_encoding_dl(model, dl, layer_name, device, cav_dim=1):
     latent_features = []
@@ -37,7 +38,7 @@ def get_latent_encoding_batch(model, data, layer_name):
     
     return layer_act
 
-def compute_cav(vecs: np.ndarray, targets: np.ndarray, cav_type: str = "svm"):
+def _compute_cav(vecs: np.ndarray, targets: np.ndarray, cav_type: str = "svm"):
     """
     Compute a concept activation vector (CAV) for a set of vectors and targets.
 
@@ -136,30 +137,46 @@ def compute_cav(vecs: np.ndarray, targets: np.ndarray, cav_type: str = "svm"):
     return cav
 
 
-def compute_all_cavs(vecs: torch.Tensor, targets: torch.Tensor):
+def compute_cavs(vecs: torch.Tensor, targets: torch.Tensor, type: str = "pattern_cav", normalize: bool = True) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Computes all concept activation vectors (CAVs) together for a set of vectors and targets.
 
     :param vecs:    torch.Tensor of shape (n_samples, n_features)
     :param targets: torch.Tensor of shape (n_samples, n_concepts)
-    :return:       torch.Tensor of shape (n_concepts, n_features)
+    :param type:    str, type of CAV to compute. One of ["pattern_cav", "multi_cav"]
+    :param normalize: bool, whether to normalize the CAVs to unit length
+    :return:        tuple of (cavs, bias)
     """
-    # Centered samples
-    X_centered = vecs - vecs.mean(dim=0, keepdim=True) # (n_samples, n_features)
+    mu_x = vecs.mean(dim=0) 
+    mu_y = targets.mean(dim=0)  
+    X_centered = vecs - mu_x.unsqueeze(0)                           # (n_samples, n_features)
+    Y_centered = targets - mu_y.unsqueeze(0)                        # (n_samples, n_concepts)
+    n_samples = vecs.shape[0]
 
-    # Centered targets for each concept
-    y_centered = targets - targets.mean(dim=0, keepdim=True) # (n_samples, n_concepts)
+    if type == "pattern_cav":
+        covars = (Y_centered.T @ X_centered) / (n_samples - 1)      # (n_concepts, n_features)
+        vars = torch.sum(Y_centered**2, dim=0) / (n_samples - 1)    # (n_concepts,)
+        inv_vars = torch.zeros_like(vars)
+        nz = vars > 0
+        inv_vars[nz] = 1.0 / vars[nz]
+        cavs = covars * inv_vars.unsqueeze(1)                       # (n_concepts, n_features)
 
-    # Covariance matrix for all concepts
-    covars = (y_centered.T @ X_centered) / (vecs.shape[0] - 1) # (n_concepts, n_features)
+        if normalize:
+            cavs /= torch.norm(cavs, dim=1, keepdim=True)
+        
+        # For zero-variance rows, best constant fit is mu_x
+        bias = mu_x.unsqueeze(0) - mu_y.unsqueeze(1) * cavs         # (n_concepts, n_features)
+        if (~nz).any():
+            bias[(~nz), :] = mu_x.unsqueeze(0)
 
-    # Variance for each concept
-    vars = torch.sum(y_centered**2, dim=0) / (vecs.shape[0] - 1)  # (n_concepts,)
+    elif type == "multi_cav":
+        y_aug = Y_centered.T @ Y_centered
+        cavs = torch.linalg.pinv(y_aug) @ (Y_centered.T @ X_centered)   # (n_concepts, n_features)
+        if normalize:
+            cavs /= torch.norm(cavs, dim=1, keepdim=True)
+        bias = (mu_x - cavs.T @ mu_y).unsqueeze(0)                      # (1, n_features)
 
-    # Compute weights w = Covariance / Variance for each concept
-    cavs = covars / vars.unsqueeze(1)  # (n_concepts, n_features)
+    else:
+        raise KeyError(f"Unknown CAV type: {type}")
 
-    # Normalize CAVs
-    cavs /= torch.norm(cavs, dim=1, keepdim=True)
-
-    return cavs
+    return cavs, bias

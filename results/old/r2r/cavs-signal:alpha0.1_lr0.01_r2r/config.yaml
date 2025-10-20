@@ -1,0 +1,20 @@
+train:
+  learning_rate: 0.01
+  num_epochs: 300
+  batch_size: 32
+  train_ratio: 0.9
+  random_seed: 42
+  num_workers: 0
+  device: mps
+cav:
+  model:
+    _target_: models.SignalCAV
+  alpha: 0.1
+  beta: null
+  n_targets: 50
+  optimal_init: true
+  exit_criterion: orthogonality
+paths:
+  latents: variables/r2r_data/latents.pt
+  labels: variables/r2r_data/labels.pt
+  concept_names: variables/r2r_data/concept_names.pkl

@@ -1,0 +1,3 @@
+device: cuda
+num_workers: 8
+batch_size: 64
