@@ -2,7 +2,8 @@ import logging
 import torch
 from models.resnet import get_resnet18, get_resnet34, get_resnet50, get_resnet_canonizer
 from models.vgg import get_vgg16, get_vgg16_bn, get_vgg11, get_vgg11_bn, get_vgg13_bn, get_vgg13, get_vgg_canonizer
-from models.efficientnet import (get_efficientnet_b0, get_efficientnet_b4, get_efficientnet_v2_s, get_efficientnet_canonizer)
+from models.efficientnet import get_efficientnet_b0, get_efficientnet_b4, get_efficientnet_v2_s, get_efficientnet_canonizer
+from models.lenet import get_lenet5, get_lenet_canonizer
 
 MODELS = {
     "vgg16": get_vgg16,
@@ -19,6 +20,8 @@ MODELS = {
     "efficientnet_b0": get_efficientnet_b0,
     "efficientnet_b4": get_efficientnet_b4,
     "efficientnet_v2_s": get_efficientnet_v2_s,
+
+    "lenet5": get_lenet5,
 }
 
 CANONIZERS = {
@@ -36,6 +39,8 @@ CANONIZERS = {
     "efficientnet_b0": get_efficientnet_canonizer,
     "efficientnet_b4": get_efficientnet_canonizer,
     "efficientnet_v2_s": get_efficientnet_canonizer,
+
+    "lenet5": get_lenet_canonizer,
 }
 
 def get_canonizer(model_name):
