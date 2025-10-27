@@ -3,7 +3,6 @@ outputs/
 
 # Unnecessary directories
 results/
-# media/
 # DELETE/
 
 # Model checkpoints

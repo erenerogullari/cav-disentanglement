@@ -1,7 +1,7 @@
 defaults:
   - hardware@train: workstation
   - dataset: elements
-  - model: efficientnet_b0
+  - model: lenet5
   - _self_
 
 experiment:

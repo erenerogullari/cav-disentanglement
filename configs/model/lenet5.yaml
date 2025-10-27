@@ -1,0 +1,6 @@
+name: lenet5
+n_class: 2
+pretrained: False
+ckpt_paths:
+  celeba: null
+  elements: null
