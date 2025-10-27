@@ -7,9 +7,6 @@ defaults:
 experiment:
   name: train_model
 
-task:
-  target_concept_idx: 4    # triangle
-
 train:
   num_epochs: 500
   learning_rate: 1.0e-4

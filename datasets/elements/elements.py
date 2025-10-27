@@ -143,6 +143,22 @@ def _default_class_configs(
     return configs, names
 
 
+def _compose_class_name(idx: int, class_config: Dict[str, Optional[str]]) -> str:
+    """
+    Build a readable class name from the provided configuration.
+    Any key with value None is skipped. If nothing remains, fall back to an index based name.
+    """
+    parts: List[str] = []
+    for key in sorted(class_config.keys()):
+        value = class_config[key]
+        if value is None:
+            continue
+        parts.append(f"{key}:{value}")
+    if not parts:
+        return f"class:{idx}"
+    return " ".join(parts)
+
+
 def _compute_concept_counts(labels: torch.Tensor) -> np.ndarray:
     if labels.numel() == 0:
         return np.array([])
@@ -248,21 +264,24 @@ class ElementsDataset(BaseDataset):
         self.allowed_colors = tuple(allowed_colors) if allowed_colors else DEFAULT_ALLOWED_COLORS
         self.allowed_textures = tuple(allowed_textures) if allowed_textures else DEFAULT_ALLOWED_TEXTURES
 
-        default_configs, default_names = _default_class_configs(
+        default_concept_configs, default_concept_names = _default_class_configs(
             self.allowed_shapes, self.allowed_colors, self.allowed_textures
         )
 
-        if class_configs is None:
-            self.class_configs = list(default_configs)
-            self.concept_names = list(default_names)
+        self.concept_configs = list(default_concept_configs)
+        if concept_names is None:
+            self.concept_names = list(default_concept_names)
         else:
+            if len(concept_names) != len(self.concept_configs):
+                raise ValueError("Length of concept_names must match concept configurations.")
+            self.concept_names = list(concept_names)
+
+        if class_configs is not None:
             self.class_configs = [dict(cfg) for cfg in class_configs]
-            if concept_names is None:
-                self.concept_names = [f"concept:{idx}" for idx in range(len(self.class_configs))]
-            else:
-                if len(concept_names) != len(self.class_configs):
-                    raise ValueError("Length of concept_names must match class_configs.")
-                self.concept_names = list(concept_names)
+            self.class_names = [_compose_class_name(idx, class_config) for idx, class_config in enumerate(self.class_configs)]
+        else:
+            self.class_configs = [dict(cfg) for cfg in self.concept_configs]
+            self.class_names = list(self.concept_names)
 
         self.allowed = _build_allowed_dict(
             self.allowed_shapes,
@@ -278,7 +297,7 @@ class ElementsDataset(BaseDataset):
 
         generator_kwargs = dict(
             allowed=self.allowed,
-            class_configs=self.class_configs,
+            class_configs=self.concept_configs,
             n=self.num_samples,
             img_size=self.img_size,
             element_n=self.element_count,
@@ -306,13 +325,18 @@ class ElementsDataset(BaseDataset):
         )
 
         labels: List[torch.Tensor] = []
+        class_labels: List[torch.Tensor] = []
         self._element_info: List[Dict] = []
         for idx in range(self.num_samples):
             element_image = self._generator.get_item(idx)
             labels.append(torch.tensor(np.asarray(element_image.class_labels_oh), dtype=torch.float32))
+            class_labels.append(self._compute_class_vector(element_image))
             self._element_info.append(element_image.info)
-        self.labels = torch.stack(labels) if labels else torch.zeros((0, 0), dtype=torch.float32)
+        self.concept_labels = torch.stack(labels) if labels else torch.zeros((0, 0), dtype=torch.float32)
+        self.labels = torch.stack(class_labels) if class_labels else torch.zeros((0, 0), dtype=torch.float32)
 
+        if self.concept_labels.ndim == 1:
+            self.concept_labels = self.concept_labels.unsqueeze(1)
         if self.labels.ndim == 1:
             self.labels = self.labels.unsqueeze(1)
 
@@ -322,16 +346,31 @@ class ElementsDataset(BaseDataset):
         self.var = torch.tensor(DEFAULT_STD)
         self.normalize_fn = T.Normalize(DEFAULT_MEAN, DEFAULT_STD)
 
-        concept_counts = _compute_concept_counts(self.labels)
-        self.weights = self.compute_weights(concept_counts) if concept_counts.size else torch.tensor([])
-        self.class_names = list(self.concept_names)
-        self.sample_ids_by_concept = {
-            name: torch.nonzero(self.labels[:, idx], as_tuple=False).squeeze(1).cpu().numpy()
-            for idx, name in enumerate(self.concept_names)
-        }
+        class_counts = _compute_concept_counts(self.labels)
+        self.weights = self.compute_weights(class_counts) if class_counts.size else torch.tensor([])
+        self._refresh_index_maps()
 
     def __len__(self) -> int:
         return self.num_samples
+
+    def _compute_class_vector(self, element_image) -> torch.Tensor:
+        if not self.class_configs:
+            return torch.zeros((0,), dtype=torch.float32)
+        vec = torch.zeros(len(self.class_configs), dtype=torch.float32)
+        for class_idx, config in enumerate(self.class_configs):
+            if element_image.belongs_to_class(config):
+                vec[class_idx] = 1.0
+        return vec
+
+    def _refresh_index_maps(self) -> None:
+        self.sample_ids_by_concept = {
+            name: torch.nonzero(self.concept_labels[:, idx], as_tuple=False).squeeze(1).cpu().numpy()
+            for idx, name in enumerate(self.concept_names)
+        } if self.concept_labels.numel() else {name: np.array([], dtype=int) for name in self.concept_names}
+        self.sample_ids_by_class = {
+            name: torch.nonzero(self.labels[:, idx], as_tuple=False).squeeze(1).cpu().numpy()
+            for idx, name in enumerate(self.class_names)
+        } if self.labels.numel() else {name: np.array([], dtype=int) for name in self.class_names}
 
     def __getitem__(self, idx: int):
         element_image = self._generator.get_item(idx)
@@ -363,17 +402,24 @@ class ElementsDataset(BaseDataset):
     def get_concept_names(self) -> List[str]:
         return list(self.concept_names)
 
+    def get_class_names(self) -> List[str]:
+        return list(self.class_names)
+
+    def get_concept_labels(self) -> torch.Tensor:
+        return self.concept_labels.clone()
+
+    def get_class_labels(self) -> torch.Tensor:
+        return self.labels.clone()
+
     def get_subset_by_idxs(self, idxs: Sequence[int]) -> "ElementsDataset":
         subset = copy.deepcopy(self)
         subset.sample_names = [self.sample_names[i] for i in idxs]
         subset.metadata = subset.metadata.iloc[idxs].reset_index(drop=True)
         subset.labels = self.labels[idxs].clone()
+        subset.concept_labels = self.concept_labels[idxs].clone()
         subset.num_samples = len(idxs)
         subset._element_info = [self._element_info[i] for i in idxs]
-        subset.sample_ids_by_concept = {
-            name: torch.nonzero(subset.labels[:, idx], as_tuple=False).squeeze(1).cpu().numpy()
-            for idx, name in enumerate(subset.concept_names)
-        }
+        subset._refresh_index_maps()
         return subset
 
     def _apply_correlations(self, correlations: Optional[Sequence[Dict[str, object]]]) -> None:
@@ -401,25 +447,27 @@ class ElementsDataset(BaseDataset):
                 warnings.warn(f"Correlation entry requires exactly 2 indices, got {indices}; skipping.")
                 continue
             idx_a, idx_b = (int(indices[0]), int(indices[1]))
-            if not (0 <= idx_a < self.labels.shape[1] and 0 <= idx_b < self.labels.shape[1]):
+            if not (0 <= idx_a < self.concept_labels.shape[1] and 0 <= idx_b < self.concept_labels.shape[1]):
                 warnings.warn(f"Correlation indices {(idx_a, idx_b)} out of range; skipping.")
                 continue
             degree = float(entry.get("degree", 0.0))
             degree = float(np.clip(degree, 0.0, 1.0))
             if degree in (0.0, 1.0):
                 log.debug("Enforcing correlation degree %.2f between concepts %s and %s", degree, self.concept_names[idx_a], self.concept_names[idx_b])
-            trigger_indices = torch.nonzero(self.labels[:, idx_a] > 0, as_tuple=False).squeeze(1).tolist()
+            trigger_indices = torch.nonzero(self.concept_labels[:, idx_a] > 0, as_tuple=False).squeeze(1).tolist()
             for sample_idx in trigger_indices:
                 desired = 1 if rng.random() < degree else 0
-                current = int(round(self.labels[sample_idx, idx_b].item()))
+                current = int(round(self.concept_labels[sample_idx, idx_b].item()))
                 if current == desired:
                     continue
                 self._resample_sample(sample_idx, idx_a, idx_b, desired, rng)
+        self._refresh_index_maps()
 
     def _resample_sample(self, sample_idx: int, trigger_idx: int, target_idx: int, desired: int, rng: np.random.Generator, max_attempts: int = 100) -> None:
         original_element_seed = int(self._generator.element_seeds[sample_idx])
         original_loc_seed = int(self._generator.loc_seeds[sample_idx])
-        original_labels = self.labels[sample_idx].clone()
+        original_concept_labels = self.concept_labels[sample_idx].clone()
+        original_class_labels = self.labels[sample_idx].clone()
         original_info = self._element_info[sample_idx]
 
         for _ in range(max_attempts):
@@ -431,7 +479,9 @@ class ElementsDataset(BaseDataset):
             if labels.ndim == 1:
                 pass
             if labels[trigger_idx] > 0 and int(round(labels[target_idx].item())) == desired:
-                self.labels[sample_idx] = labels
+                self.concept_labels[sample_idx] = labels
+                class_vec = self._compute_class_vector(element_image)
+                self.labels[sample_idx] = class_vec
                 self._element_info[sample_idx] = element_image.info
                 self.metadata.at[sample_idx, "element_seed"] = int(self._generator.element_seeds[sample_idx])
                 self.metadata.at[sample_idx, "loc_seed"] = int(self._generator.loc_seeds[sample_idx])
@@ -440,13 +490,17 @@ class ElementsDataset(BaseDataset):
         # Revert if unsuccessful
         self._generator.element_seeds[sample_idx] = original_element_seed
         self._generator.loc_seeds[sample_idx] = original_loc_seed
-        self.labels[sample_idx] = original_labels
+        self.concept_labels[sample_idx] = original_concept_labels
+        self.labels[sample_idx] = original_class_labels
         self._element_info[sample_idx] = original_info
         self.metadata.at[sample_idx, "element_seed"] = original_element_seed
         self.metadata.at[sample_idx, "loc_seed"] = original_loc_seed
         warnings.warn(
             f"Unable to satisfy correlation constraint for sample {sample_idx} (trigger={self.concept_names[trigger_idx]}, target={self.concept_names[target_idx]}, desired={desired})."
         )
+
+    def get_num_classes(self) -> int:
+        return len(self.class_names)
 
 
 if __name__ == "__main__":
@@ -471,11 +525,11 @@ if __name__ == "__main__":
         image_uint8 = dataset.reverse_normalization(image_tensor).permute(1, 2, 0).cpu().numpy()
         image_uint8 = np.clip(image_uint8, 0, 255).astype(np.uint8)
 
-        concept_ids = torch.nonzero(label_vec > 0, as_tuple=False).squeeze(1).tolist()
-        concept_names = [dataset.concept_names[c] for c in concept_ids] if concept_ids else ["no concepts"]
+        class_ids = torch.nonzero(label_vec > 0, as_tuple=False).squeeze(1).tolist()
+        active_classes = [dataset.class_names[c] for c in class_ids] if class_ids else ["no classes"]
 
         axes[idx].imshow(image_uint8)
-        axes[idx].set_title("\n".join(concept_names), fontsize=10)
+        axes[idx].set_title("\n".join(active_classes), fontsize=10)
         axes[idx].axis("off")
 
     for ax in axes[n_show:]:
@@ -485,6 +539,7 @@ if __name__ == "__main__":
     plt.show()
 
     print(f"Concept names: {dataset.get_concept_names()}")
+    print(f"Class names: {dataset.get_class_names()}")
 
     labels_tensor = dataset.get_labels()
     labels_np = labels_tensor.numpy()

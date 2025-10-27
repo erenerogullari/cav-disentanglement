@@ -1,5 +1,5 @@
 name: lenet5
-n_class: 2
+n_class: 153
 pretrained: False
 ckpt_paths:
   celeba: null
