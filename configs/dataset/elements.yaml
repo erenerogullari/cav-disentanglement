@@ -18,5 +18,466 @@ correlations:
     degree: 0.6
 
 localization:
-  concept_ids: [0, 1, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38]
-  concept_pair_ids: [[9, 38], [4, 31], [8, 38], [16, 9], [16, 8]]
+  concept_ids: []
+  concept_pair_ids: []
+
+class_configs:
+    - color: red
+      shape: square
+      texture: solid
+    - color: red
+      shape: square
+      texture: spots_polka
+    - color: red
+      shape: square
+      texture: stripes_diagonal
+    - color: red
+      shape: square
+      texture: null
+    - color: green
+      shape: square
+      texture: solid
+    - color: green
+      shape: square
+      texture: spots_polka
+    - color: green
+      shape: square
+      texture: stripes_diagonal
+    - color: green
+      shape: square
+      texture: null
+    - color: blue
+      shape: square
+      texture: solid
+    - color: blue
+      shape: square
+      texture: spots_polka
+    - color: blue
+      shape: square
+      texture: stripes_diagonal
+    - color: blue
+      shape: square
+      texture: null
+    - color: yellow
+      shape: square
+      texture: solid
+    - color: yellow
+      shape: square
+      texture: spots_polka
+    - color: yellow
+      shape: square
+      texture: stripes_diagonal
+    - color: yellow
+      shape: square
+      texture: null
+    - color: cyan
+      shape: square
+      texture: solid
+    - color: cyan
+      shape: square
+      texture: spots_polka
+    - color: cyan
+      shape: square
+      texture: stripes_diagonal
+    - color: cyan
+      shape: square
+      texture: null
+    - color: magenta
+      shape: square
+      texture: solid
+    - color: magenta
+      shape: square
+      texture: spots_polka
+    - color: magenta
+      shape: square
+      texture: stripes_diagonal
+    - color: magenta
+      shape: square
+      texture: null
+    - color: null
+      shape: square
+      texture: solid
+    - color: null
+      shape: square
+      texture: spots_polka
+    - color: null
+      shape: square
+      texture: stripes_diagonal
+    - color: red
+      shape: circle
+      texture: solid
+    - color: red
+      shape: circle
+      texture: spots_polka
+    - color: red
+      shape: circle
+      texture: stripes_diagonal
+    - color: red
+      shape: circle
+      texture: null
+    - color: green
+      shape: circle
+      texture: solid
+    - color: green
+      shape: circle
+      texture: spots_polka
+    - color: green
+      shape: circle
+      texture: stripes_diagonal
+    - color: green
+      shape: circle
+      texture: null
+    - color: blue
+      shape: circle
+      texture: solid
+    - color: blue
+      shape: circle
+      texture: spots_polka
+    - color: blue
+      shape: circle
+      texture: stripes_diagonal
+    - color: blue
+      shape: circle
+      texture: null
+    - color: yellow
+      shape: circle
+      texture: solid
+    - color: yellow
+      shape: circle
+      texture: spots_polka
+    - color: yellow
+      shape: circle
+      texture: stripes_diagonal
+    - color: yellow
+      shape: circle
+      texture: null
+    - color: cyan
+      shape: circle
+      texture: solid
+    - color: cyan
+      shape: circle
+      texture: spots_polka
+    - color: cyan
+      shape: circle
+      texture: stripes_diagonal
+    - color: cyan
+      shape: circle
+      texture: null
+    - color: magenta
+      shape: circle
+      texture: solid
+    - color: magenta
+      shape: circle
+      texture: spots_polka
+    - color: magenta
+      shape: circle
+      texture: stripes_diagonal
+    - color: magenta
+      shape: circle
+      texture: null
+    - color: null
+      shape: circle
+      texture: solid
+    - color: null
+      shape: circle
+      texture: spots_polka
+    - color: null
+      shape: circle
+      texture: stripes_diagonal
+    - color: red
+      shape: triangle
+      texture: solid
+    - color: red
+      shape: triangle
+      texture: spots_polka
+    - color: red
+      shape: triangle
+      texture: stripes_diagonal
+    - color: red
+      shape: triangle
+      texture: null
+    - color: green
+      shape: triangle
+      texture: solid
+    - color: green
+      shape: triangle
+      texture: spots_polka
+    - color: green
+      shape: triangle
+      texture: stripes_diagonal
+    - color: green
+      shape: triangle
+      texture: null
+    - color: blue
+      shape: triangle
+      texture: solid
+    - color: blue
+      shape: triangle
+      texture: spots_polka
+    - color: blue
+      shape: triangle
+      texture: stripes_diagonal
+    - color: blue
+      shape: triangle
+      texture: null
+    - color: yellow
+      shape: triangle
+      texture: solid
+    - color: yellow
+      shape: triangle
+      texture: spots_polka
+    - color: yellow
+      shape: triangle
+      texture: stripes_diagonal
+    - color: yellow
+      shape: triangle
+      texture: null
+    - color: cyan
+      shape: triangle
+      texture: solid
+    - color: cyan
+      shape: triangle
+      texture: spots_polka
+    - color: cyan
+      shape: triangle
+      texture: stripes_diagonal
+    - color: cyan
+      shape: triangle
+      texture: null
+    - color: magenta
+      shape: triangle
+      texture: solid
+    - color: magenta
+      shape: triangle
+      texture: spots_polka
+    - color: magenta
+      shape: triangle
+      texture: stripes_diagonal
+    - color: magenta
+      shape: triangle
+      texture: null
+    - color: null
+      shape: triangle
+      texture: solid
+    - color: null
+      shape: triangle
+      texture: spots_polka
+    - color: null
+      shape: triangle
+      texture: stripes_diagonal
+    - color: red
+      shape: plus
+      texture: solid
+    - color: red
+      shape: plus
+      texture: spots_polka
+    - color: red
+      shape: plus
+      texture: stripes_diagonal
+    - color: red
+      shape: plus
+      texture: null
+    - color: green
+      shape: plus
+      texture: solid
+    - color: green
+      shape: plus
+      texture: spots_polka
+    - color: green
+      shape: plus
+      texture: stripes_diagonal
+    - color: green
+      shape: plus
+      texture: null
+    - color: blue
+      shape: plus
+      texture: solid
+    - color: blue
+      shape: plus
+      texture: spots_polka
+    - color: blue
+      shape: plus
+      texture: stripes_diagonal
+    - color: blue
+      shape: plus
+      texture: null
+    - color: yellow
+      shape: plus
+      texture: solid
+    - color: yellow
+      shape: plus
+      texture: spots_polka
+    - color: yellow
+      shape: plus
+      texture: stripes_diagonal
+    - color: yellow
+      shape: plus
+      texture: null
+    - color: cyan
+      shape: plus
+      texture: solid
+    - color: cyan
+      shape: plus
+      texture: spots_polka
+    - color: cyan
+      shape: plus
+      texture: stripes_diagonal
+    - color: cyan
+      shape: plus
+      texture: null
+    - color: magenta
+      shape: plus
+      texture: solid
+    - color: magenta
+      shape: plus
+      texture: spots_polka
+    - color: magenta
+      shape: plus
+      texture: stripes_diagonal
+    - color: magenta
+      shape: plus
+      texture: null
+    - color: null
+      shape: plus
+      texture: solid
+    - color: null
+      shape: plus
+      texture: spots_polka
+    - color: null
+      shape: plus
+      texture: stripes_diagonal
+    - color: red
+      shape: cross
+      texture: solid
+    - color: red
+      shape: cross
+      texture: spots_polka
+    - color: red
+      shape: cross
+      texture: stripes_diagonal
+    - color: red
+      shape: cross
+      texture: null
+    - color: green
+      shape: cross
+      texture: solid
+    - color: green
+      shape: cross
+      texture: spots_polka
+    - color: green
+      shape: cross
+      texture: stripes_diagonal
+    - color: green
+      shape: cross
+      texture: null
+    - color: blue
+      shape: cross
+      texture: solid
+    - color: blue
+      shape: cross
+      texture: spots_polka
+    - color: blue
+      shape: cross
+      texture: stripes_diagonal
+    - color: blue
+      shape: cross
+      texture: null
+    - color: yellow
+      shape: cross
+      texture: solid
+    - color: yellow
+      shape: cross
+      texture: spots_polka
+    - color: yellow
+      shape: cross
+      texture: stripes_diagonal
+    - color: yellow
+      shape: cross
+      texture: null
+    - color: cyan
+      shape: cross
+      texture: solid
+    - color: cyan
+      shape: cross
+      texture: spots_polka
+    - color: cyan
+      shape: cross
+      texture: stripes_diagonal
+    - color: cyan
+      shape: cross
+      texture: null
+    - color: magenta
+      shape: cross
+      texture: solid
+    - color: magenta
+      shape: cross
+      texture: spots_polka
+    - color: magenta
+      shape: cross
+      texture: stripes_diagonal
+    - color: magenta
+      shape: cross
+      texture: null
+    - color: null
+      shape: cross
+      texture: solid
+    - color: null
+      shape: cross
+      texture: spots_polka
+    - color: null
+      shape: cross
+      texture: stripes_diagonal
+    - color: red
+      shape: null
+      texture: solid
+    - color: red
+      shape: null
+      texture: spots_polka
+    - color: red
+      shape: null
+      texture: stripes_diagonal
+    - color: green
+      shape: null
+      texture: solid
+    - color: green
+      shape: null
+      texture: spots_polka
+    - color: green
+      shape: null
+      texture: stripes_diagonal
+    - color: blue
+      shape: null
+      texture: solid
+    - color: blue
+      shape: null
+      texture: spots_polka
+    - color: blue
+      shape: null
+      texture: stripes_diagonal
+    - color: yellow
+      shape: null
+      texture: solid
+    - color: yellow
+      shape: null
+      texture: spots_polka
+    - color: yellow
+      shape: null
+      texture: stripes_diagonal
+    - color: cyan
+      shape: null
+      texture: solid
+    - color: cyan
+      shape: null
+      texture: spots_polka
+    - color: cyan
+      shape: null
+      texture: stripes_diagonal
+    - color: magenta
+      shape: null
+      texture: solid
+    - color: magenta
+      shape: null
+      texture: spots_polka
+    - color: magenta
+      shape: null
+      texture: stripes_diagonal
