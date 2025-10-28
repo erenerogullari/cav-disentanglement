@@ -1,0 +1,11 @@
+torch==1.8.1+cu111 torchvision==0.9.1+cu111 torchaudio==0.8.1 pytorch-lightning==1.2.2  torchtext==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html
+scipy==1.5.4
+numpy==1.19.5
+tqdm
+pytorch-fid==0.2.0
+pandas==1.1.5
+lpips==0.1.4
+lmdb==1.2.1
+ftfy
+regex
+dlib requests

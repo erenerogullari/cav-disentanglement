@@ -1,0 +1,6 @@
+name: diffae
+n_class: 
+pretrained: True
+
+T_encode: 250
+T_decode: 100
