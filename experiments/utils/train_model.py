@@ -41,6 +41,12 @@ def _call_with_matching_kwargs(fn, kwargs: Dict) -> object:
     filtered = {k: v for k, v in kwargs.items() if k in allowed}
     return fn(**filtered)
 
+def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
+    checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
+    return checkpoint_path
+
 
 def _instantiate_dataset(cfg: DictConfig) -> Tuple[BaseDataset, bool]:
     container = OmegaConf.to_container(cfg, resolve=True)
@@ -159,8 +165,7 @@ def _build_loaders(dataset, shuffle: bool, cfg_train: DictConfig):
 
 def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **override_kwargs) -> nn.Module:
     model_loader = get_fn_model_loader(cfg_model.name)
-    ckpt_paths = OmegaConf.to_container(cfg_model.ckpt_paths, resolve=True) if hasattr(cfg_model, "ckpt_paths") else {}
-    ckpt_path = ckpt_paths.get(dataset_name) if isinstance(ckpt_paths, Dict) else None
+    ckpt_path = _resolve_checkpoint_path(cfg_model, dataset_name)
     loader_kwargs = {
         "ckpt_path": ckpt_path,
         "pretrained": getattr(cfg_model, "pretrained", True),
@@ -248,7 +253,8 @@ def run(cfg: DictConfig) -> None:
     optimizer = optim.Adam(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
 
     best_state = None
-    best_metric = float("inf") if val_loader is not None else float("nan")
+    best_metric = 0
+    best_epoch = 0
 
     log_every = max(1, cfg.train.log_interval)
 
@@ -258,9 +264,10 @@ def run(cfg: DictConfig) -> None:
 
         if val_loader is not None:
             val_loss, val_acc = _evaluate(model, val_loader, criterion, device)
-            if cfg.train.save_best and val_loss < best_metric:
-                best_metric = val_loss
+            if cfg.train.save_best and val_acc > best_metric:
+                best_metric = val_acc
                 best_state = copy.deepcopy(model.state_dict())
+                best_epoch = epoch
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
                 log.info(
                     "Epoch %03d | train_loss=%.4f train_acc=%.4f | val_loss=%.4f val_acc=%.4f",
@@ -275,17 +282,15 @@ def run(cfg: DictConfig) -> None:
                 log.info("Epoch %03d | train_loss=%.4f train_acc=%.4f", epoch, train_loss, train_acc)
 
     if best_state is not None:
+        log.info("Loading best model from epoch %d with val_acc=%.4f", best_epoch, best_metric)
         model.load_state_dict(best_state)
 
     test_loss, test_acc = _evaluate(model, test_loader, criterion, device)
     log.info("Test metrics | loss=%.4f acc=%.4f", test_loss, test_acc)
 
-    checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / f"checkpoint_{cfg.model.name}_{cfg.dataset.name}.pth"
+    checkpoint_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
     log.info("Saved checkpoint to %s", checkpoint_path)
-
 
 if __name__ == "__main__":
     run()

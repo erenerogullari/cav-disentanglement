@@ -8,11 +8,11 @@ experiment:
   name: train_model
 
 train:
-  num_epochs: 1
+  num_epochs: 500
   learning_rate: 1.0e-4
   weight_decay: 0.0
   val_split: 0.1
   test_split: 0.1
   random_seed: 42
   log_interval: 10
-  save_best: true
+  save_best: True

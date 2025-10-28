@@ -17,8 +17,17 @@ from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compu
 from utils.sim_matrix import reorder_similarity_matrix
 from experiments.utils.utils import name_experiment, initialize_weights, save_results, save_plots
 from experiments.utils.activations import extract_latents
+from hydra.utils import get_original_cwd
+from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
+    checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
+    return checkpoint_path
+
 
 def train_test_split(x_latent, labels, train_ratio):
     total_size = x_latent.shape[0]
@@ -115,15 +124,17 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
 
     # Load model, dataset and compute latents
     log.info(f"Loading model: {cfg.model.name}")
-    model = get_fn_model_loader(cfg.model.name)(ckpt_path=cfg.model.ckpt_paths[cfg.dataset.name],
+    ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
+    model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
                                                 pretrained=cfg.model.pretrained,
                                                 n_class=cfg.model.n_class).to(device)
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
     dataset_cfg = OmegaConf.to_container(cfg.dataset, resolve=True)
+    assert type(dataset_cfg) is dict
     dataset_name = dataset_cfg.pop("name")
     dataset_fn = get_dataset(dataset_name)
-    dataset = dataset_fn(**dataset_cfg)
+    dataset = dataset_fn(**dataset_cfg) # type: ignore
     dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
                                         normalize_data=cfg.dataset.normalize_data,
                                         image_size=cfg.dataset.img_size)
@@ -140,7 +151,7 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
     # Initialize CAV model and weights (alpha)
     log.info(f"Initializing CAV model: {cfg.cav.name}")
     raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
-    cav_cfg = {"_target_": raw_cav_cfg["_target_"]}
+    cav_cfg = {"_target_": raw_cav_cfg["_target_"]} # type: ignore
     cavs_original, bias_original = compute_cavs(train_latents, train_labels, type=cfg.cav.name, normalize=True)
     cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device=device)
     if cfg.cav.optimal_init:
@@ -191,7 +202,7 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
         
         if epoch % 10 == 0:
             tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
-            tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}")
+            tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}") # type: ignore
 
 
     # Save the results
