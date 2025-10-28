@@ -111,7 +111,7 @@ class Element(Dataset):
 
 
 class ElementImage:
-    def __init__(self, elements: List[Element], size: int = 224, loc_seed: int = None, loc_restrictions=None, place_remaining_randomly=True):
+    def __init__(self, elements: List[Element], size: int = 224, loc_seed: int = 0, loc_restrictions=None, place_remaining_randomly=True):
         self.elements = elements
         self.size = size
         self.loc_seed = loc_seed
@@ -338,23 +338,23 @@ class ElementDataset:
             T.ToTensor(),
             ])
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         item = self.get_item(idx)
         img = self.transform(item.img)
         return [img, item.class_labels_oh]
 
-    def get_item(self, idx):
+    def get_item(self, idx: int):
         element_configs = self.choose_element_configs(
             self.element_n,
             self.allowed["sizes"],
             self.allowed["shapes"],
             self.allowed["colors"],
             self.allowed["textures"],
-            self.element_seeds[idx],
+            self.element_seeds[idx], # type: ignore
             allowed_combinations=self.allowed_combinations
         )
-        elements = [Element(**v) for v in element_configs]
-        img = ElementImage(elements, self.img_size, self.loc_seeds[idx],
+        elements = [Element(**v) for v in element_configs] 
+        img = ElementImage(elements, self.img_size, self.loc_seeds[idx], # type: ignore
                            loc_restrictions=self.loc_restrictions,
                            place_remaining_randomly=self.place_remaining_randomly)
         img.update_class_labels(self.class_configs)
@@ -413,7 +413,7 @@ class GroupedElementDataset(ElementDataset):
         self.idx_array = [np.where(all_class_labels[:, i])[0] for i in range(all_class_labels.shape[1])]
 
     def __getitem__(self, idx):
-        item = self.get_item(self.idx_array[self.current_label][idx])
+        item = self.get_item(self.idx_array[self.current_label][idx]) # type: ignore
         img = self.transform(item.img)
         return [img, item.class_labels_oh]
 
@@ -449,7 +449,7 @@ class ConceptElementDatasetCreator:
         try:
             concept = int(concept)
             if loc_restriction is None:
-                self.class_dataset.current_label = concept
+                self.class_dataset.current_label = concept # type: ignore
                 return self.class_dataset
             else:
                 # If applying a location restriction we need to recreate the class
@@ -463,12 +463,12 @@ class ConceptElementDatasetCreator:
                     place_remaining_randomly=False,
                     **self.dataset_kwargs
                 )
-                class_dataset.current_label = concept
+                class_dataset.current_label = concept # type: ignore
                 return class_dataset
 
         except ValueError:
-            if "random" in concept:
-                random_idx = int(concept.split("_")[-1])
+            if "random" in concept: # type: ignore
+                random_idx = int(concept.split("_")[-1]) # type: ignore
                 return self.create_random_dataset(random_idx, loc_restriction)
             else:
                 return self.create_concept_dataset(concept, loc_restriction)
@@ -491,7 +491,7 @@ class ConceptElementDatasetCreator:
         kwargs = deepcopy(self.dataset_kwargs)
         kwargs["element_seed"] = element_seed
         kwargs["loc_seed"] = loc_seed
-        dataset = ElementDataset(
+        dataset = ElementDataset( # type: ignore
             self.allowed,
             self.class_configs,
             allowed_combinations=self.allowed_combinations,
@@ -520,7 +520,7 @@ class ConceptElementDatasetCreator:
         allowed_concept = deepcopy(self.allowed)
         allowed_concept[concept_type] = [concept]
 
-        dataset = ElementDataset(
+        dataset = ElementDataset( # type: ignore
             allowed_concept,
             self.class_configs,
             allowed_combinations=self.allowed_combinations,

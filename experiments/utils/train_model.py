@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from datasets import get_dataset
 from hydra.utils import get_original_cwd
 from models import get_fn_model_loader
+from datasets import BaseDataset
 
 log = logging.getLogger(__name__)
 
@@ -41,12 +42,14 @@ def _call_with_matching_kwargs(fn, kwargs: Dict) -> object:
     return fn(**filtered)
 
 
-def _instantiate_dataset(cfg: DictConfig) -> Tuple[object, bool]:
+def _instantiate_dataset(cfg: DictConfig) -> Tuple[BaseDataset, bool]:
     container = OmegaConf.to_container(cfg, resolve=True)
+    assert isinstance(container, dict)
     dataset_name = container.pop("name")
     shuffle = container.pop("shuffle", True)
     dataset_fn = get_dataset(dataset_name)
     dataset = _call_with_matching_kwargs(dataset_fn, container)
+    assert isinstance(dataset, BaseDataset)
     return dataset, shuffle
 
 
@@ -112,7 +115,7 @@ def _evaluate(
     device: torch.device,
 ) -> Tuple[float, float]:
     if dataloader is None or len(dataloader) == 0:
-        return float("nan"), float("nan")
+        raise ValueError("Dataloader for evaluation is None or empty.")
 
     model.eval()
     total_loss = 0.0
@@ -154,7 +157,7 @@ def _build_loaders(dataset, shuffle: bool, cfg_train: DictConfig):
     return train_dataset, train_loader, val_loader, test_loader
 
 
-def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **override_kwargs) -> torch.nn.Module:
+def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **override_kwargs) -> nn.Module:
     model_loader = get_fn_model_loader(cfg_model.name)
     ckpt_paths = OmegaConf.to_container(cfg_model.ckpt_paths, resolve=True) if hasattr(cfg_model, "ckpt_paths") else {}
     ckpt_path = ckpt_paths.get(dataset_name) if isinstance(ckpt_paths, Dict) else None
@@ -172,6 +175,7 @@ def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **overrid
     if "device" in inspect.signature(model_loader).parameters:
         loader_kwargs["device"] = device
     model = _call_with_matching_kwargs(model_loader, loader_kwargs)
+    assert isinstance(model, nn.Module)
     return model
 
 
@@ -185,6 +189,7 @@ def run(cfg: DictConfig) -> None:
 
     log.info("Using dataset: %s", cfg.dataset.name)
     dataset, shuffle = _instantiate_dataset(cfg.dataset)
+    assert isinstance(dataset, BaseDataset)
     if hasattr(dataset, "get_num_classes"):
         num_classes = dataset.get_num_classes()
     else:
@@ -243,7 +248,7 @@ def run(cfg: DictConfig) -> None:
     optimizer = optim.Adam(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
 
     best_state = None
-    best_metric = float("inf") if val_loader is not None else None
+    best_metric = float("inf") if val_loader is not None else float("nan")
 
     log_every = max(1, cfg.train.log_interval)
 

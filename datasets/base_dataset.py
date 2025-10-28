@@ -30,6 +30,9 @@ class BaseDataset(Dataset):
         idxs_train = np.array(sorted(list(set(idxs_left) - set(idxs_test))))
 
         return idxs_train, idxs_val, idxs_test
+    
+    def __len__(self) -> int:
+        raise NotImplementedError()
 
     def get_all_ids(self):
         raise NotImplementedError()
@@ -44,6 +47,12 @@ class BaseDataset(Dataset):
         raise NotImplementedError()
     
     def get_concept_names(self):
+        raise NotImplementedError()
+    
+    def get_num_classes(self):
+        raise NotImplementedError()
+    
+    def get_class_names(self):
         raise NotImplementedError()
     
     def get_class_id_by_name(self, class_name):
