@@ -43,17 +43,18 @@ class LeNet5(nn.Module):
         return x
     
 
-def get_lenet5(ckpt_path=None, pretrained=True, n_class: int = None, in_channels: int = 1, input_size: int = 32) -> torch.nn.Module:
+def get_lenet5(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: int = 1, input_size: int = 32) -> torch.nn.Module:
 
+    if n_class == 0:
+        raise ValueError("n_class must be specified for LeNet5 model.")
+    
     model = LeNet5(
         num_classes=n_class if n_class else 2,
         in_channels=in_channels,
         input_size=input_size,
     )
-    if pretrained:
-        raise NotImplementedError("Pretrained weights are not available for LeNet5.")
 
-    if ckpt_path:
+    if pretrained and ckpt_path:
         checkpoint = torch.load(ckpt_path, weights_only=True)
         if "state_dict" in checkpoint:
             checkpoint = checkpoint["state_dict"]
