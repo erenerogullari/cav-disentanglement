@@ -1,1 +1,13 @@
-# TODO
+defaults:
+  - _self_
+  - model: diffae
+  - dataset: celeba
+  - cav_model: pattern_cav
+
+move_encs:
+  label_value_to_move: 1
+  label_name: Wearing_Necktie
+  step_size: 0.8
+  move_method: signal
+  cav_mode: max
+  normalize_from_data: true
