@@ -1,6 +1,6 @@
 name: lenet5
 n_class: 153
-pretrained: False
+pretrained: True
 ckpt_paths:
   celeba: null
-  elements: null
+  elements: "checkpoints/checkpoint_lenet5_elements.pth"
