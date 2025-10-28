@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Union
+import os
 
 class LeNet5(nn.Module):
     def __init__(self, num_classes=2, in_channels: int = 1, input_size: Union[int, Tuple[int, int]] = 32):
@@ -55,6 +56,9 @@ def get_lenet5(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: i
     )
 
     if pretrained and ckpt_path:
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(f"The model has no pretrained weights available or the checkpoint path name ({ckpt_path}) is not correct.")
+        
         checkpoint = torch.load(ckpt_path, weights_only=True)
         if "state_dict" in checkpoint:
             checkpoint = checkpoint["state_dict"]
