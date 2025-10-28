@@ -95,11 +95,11 @@ DEFAULT_ALLOWED_TEXTURES: Tuple[str, ...] = (
 
 def _normalization_transform(normalize_data: bool, image_size: int) -> T.Compose:
     transforms: List[T.Compose] = [
-        T.Resize((image_size, image_size), interpolation=T.functional.InterpolationMode.BICUBIC),
+        T.Resize((image_size, image_size), interpolation=T.functional.InterpolationMode.BICUBIC), # type: ignore
         T.ToTensor(),
     ]
     if normalize_data:
-        transforms.append(T.Normalize(DEFAULT_MEAN, DEFAULT_STD))
+        transforms.append(T.Normalize(DEFAULT_MEAN, DEFAULT_STD)) # type: ignore
     return T.Compose(transforms)
 
 
@@ -109,7 +109,7 @@ def _build_allowed_dict(
     textures: Sequence[str],
     element_size: int,
     element_size_delta: int,
-) -> Dict[str, Iterable[str]]:
+) -> Dict[str, Iterable[str] | Tuple[int, int]]:
     min_size = max(1, element_size - element_size_delta)
     max_size = max(min_size, element_size + element_size_delta)
     return {
@@ -313,7 +313,7 @@ class ElementsDataset(BaseDataset):
         if extra_kwargs:
             log.debug("Ignoring unsupported kwargs for ElementsDataset: %s", sorted(extra_kwargs.keys()))
 
-        self._generator = ElementDataset(**generator_kwargs)
+        self._generator = ElementDataset(**generator_kwargs) # type: ignore
 
         self.sample_names: List[str] = [f"element_{idx:05d}" for idx in range(self.num_samples)]
         self.metadata = pd.DataFrame(
@@ -414,7 +414,7 @@ class ElementsDataset(BaseDataset):
     def get_subset_by_idxs(self, idxs: Sequence[int]) -> "ElementsDataset":
         subset = copy.deepcopy(self)
         subset.sample_names = [self.sample_names[i] for i in idxs]
-        subset.metadata = subset.metadata.iloc[idxs].reset_index(drop=True)
+        subset.metadata = subset.metadata.iloc[idxs].reset_index(drop=True) # type: ignore
         subset.labels = self.labels[idxs].clone()
         subset.concept_labels = self.concept_labels[idxs].clone()
         subset.num_samples = len(idxs)
@@ -436,21 +436,21 @@ class ElementsDataset(BaseDataset):
                 if isinstance(names, (str, bytes)):
                     names = [names]
                 try:
-                    indices = [self.concept_names.index(name) for name in names]
+                    indices = [self.concept_names.index(name) for name in names] # type: ignore
                 except ValueError as err:
                     warnings.warn(f"Correlation request skipped: {err}")
                     continue
             if indices is None:
                 warnings.warn("Correlation entry missing concept indices; skipping.")
                 continue
-            if len(indices) != 2:
+            if len(indices) != 2:   # type: ignore
                 warnings.warn(f"Correlation entry requires exactly 2 indices, got {indices}; skipping.")
                 continue
-            idx_a, idx_b = (int(indices[0]), int(indices[1]))
+            idx_a, idx_b = (int(indices[0]), int(indices[1])) # type: ignore
             if not (0 <= idx_a < self.concept_labels.shape[1] and 0 <= idx_b < self.concept_labels.shape[1]):
                 warnings.warn(f"Correlation indices {(idx_a, idx_b)} out of range; skipping.")
                 continue
-            degree = float(entry.get("degree", 0.0))
+            degree = float(entry.get("degree", 0.0)) # type: ignore
             degree = float(np.clip(degree, 0.0, 1.0))
             if degree in (0.0, 1.0):
                 log.debug("Enforcing correlation degree %.2f between concepts %s and %s", degree, self.concept_names[idx_a], self.concept_names[idx_b])
@@ -464,15 +464,15 @@ class ElementsDataset(BaseDataset):
         self._refresh_index_maps()
 
     def _resample_sample(self, sample_idx: int, trigger_idx: int, target_idx: int, desired: int, rng: np.random.Generator, max_attempts: int = 100) -> None:
-        original_element_seed = int(self._generator.element_seeds[sample_idx])
-        original_loc_seed = int(self._generator.loc_seeds[sample_idx])
+        original_element_seed = int(self._generator.element_seeds[sample_idx]) # type: ignore
+        original_loc_seed = int(self._generator.loc_seeds[sample_idx]) # type: ignore
         original_concept_labels = self.concept_labels[sample_idx].clone()
         original_class_labels = self.labels[sample_idx].clone()
         original_info = self._element_info[sample_idx]
 
         for _ in range(max_attempts):
-            self._generator.element_seeds[sample_idx] = rng.integers(0, 2**32, dtype=np.uint32)
-            self._generator.loc_seeds[sample_idx] = rng.integers(0, 2**32, dtype=np.uint32)
+            self._generator.element_seeds[sample_idx] = rng.integers(0, 2**32, dtype=np.uint32) # type: ignore
+            self._generator.loc_seeds[sample_idx] = rng.integers(0, 2**32, dtype=np.uint32) # type: ignore
             element_image = self._generator.get_item(sample_idx)
             labels_np = np.asarray(element_image.class_labels_oh)
             labels = torch.tensor(labels_np, dtype=torch.float32)
@@ -483,13 +483,13 @@ class ElementsDataset(BaseDataset):
                 class_vec = self._compute_class_vector(element_image)
                 self.labels[sample_idx] = class_vec
                 self._element_info[sample_idx] = element_image.info
-                self.metadata.at[sample_idx, "element_seed"] = int(self._generator.element_seeds[sample_idx])
-                self.metadata.at[sample_idx, "loc_seed"] = int(self._generator.loc_seeds[sample_idx])
+                self.metadata.at[sample_idx, "element_seed"] = int(self._generator.element_seeds[sample_idx]) # type: ignore
+                self.metadata.at[sample_idx, "loc_seed"] = int(self._generator.loc_seeds[sample_idx]) # type: ignore
                 return
 
         # Revert if unsuccessful
-        self._generator.element_seeds[sample_idx] = original_element_seed
-        self._generator.loc_seeds[sample_idx] = original_loc_seed
+        self._generator.element_seeds[sample_idx] = original_element_seed # type: ignore
+        self._generator.loc_seeds[sample_idx] = original_loc_seed # type: ignore
         self.concept_labels[sample_idx] = original_concept_labels
         self.labels[sample_idx] = original_class_labels
         self._element_info[sample_idx] = original_info

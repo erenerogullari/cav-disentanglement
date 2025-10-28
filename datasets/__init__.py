@@ -4,6 +4,7 @@ from datasets.celeba.celeba import get_celeba_dataset
 from datasets.elements.elements import get_elements_dataset
 from datasets.funnybirds.funnybirds import get_funnybirds
 from datasets.funnybirds.funnybirds_attributes import get_funnybirds_attributes
+from datasets.base_dataset import BaseDataset
 
 
 DATASETS = {
