@@ -1,3 +1,3 @@
 name: lenet5
 n_class: 153
-pretrained: True
+pretrained: False
