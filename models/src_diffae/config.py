@@ -7,7 +7,7 @@ from typing import Tuple
 from torch.utils.data import DataLoader
 
 from models.src_diffae.config_base import BaseConfig
-from src.dataset import *
+# from src.dataset import *
 from models.src_diffae.diffusion import *
 from models.src_diffae.diffusion.base import GenerativeType, LossType, ModelMeanType, ModelVarType, get_named_beta_schedule
 from models.src_diffae.model import *

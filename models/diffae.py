@@ -35,7 +35,7 @@ class DiffAE(nn.Module):
     def encode(self, x):
         if x.min() >= 0. and x.max() <= 1.:
             x = (x - 0.5) * 2
-        return self.model.encoder.forward(x)
+        return self.model.encoder.forward(x) # type: ignore
 
 
     def encode_stochastic(self, x, cond):        
@@ -49,7 +49,7 @@ class DiffAE(nn.Module):
     def decode(self, noise, cond):
         sampler = self.sampler_decode
         pred_img = render_condition(self.config,
-                                    self.model,
+                                    self.model,  # type: ignore
                                     noise,
                                     sampler = sampler,
                                     cond = cond)

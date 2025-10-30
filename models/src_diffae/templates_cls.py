@@ -1,4 +1,4 @@
-from templates import *
+from models.src_diffae.templates import *
 
 
 def ffhq128_autoenc_cls():

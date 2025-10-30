@@ -7,8 +7,8 @@ import numpy as np
 import torch as th
 from torch import nn
 import torch.nn.functional as F
-from choices import *
-from config_base import BaseConfig
+from models.src_diffae.choices import *
+from models.src_diffae.config_base import BaseConfig
 from models.src_diffae.model.blocks import *
 
 from models.src_diffae.model.nn import (conv_nd, linear, normalization, timestep_embedding,

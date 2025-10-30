@@ -1,76 +1,94 @@
-import math
-import torch
+import random
 from pathlib import Path
-from tqdm import tqdm
-from omegaconf import DictConfig
+from typing import Optional
+
+import numpy as np
+import torch
 from hydra.utils import instantiate
+from omegaconf import DictConfig
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import logging
 log = logging.getLogger(__name__)
 
 
-def get_fabric(config):
-    fabric = instantiate(config.fabric)
-    fabric.seed_everything(config.exp.seed)
-    fabric.launch()
-    return fabric
+def seed_everything(seed: Optional[int]) -> None:
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
-def get_components(config, fabric):
-    model = fabric.setup(instantiate(config.model))
+def build_model(config: DictConfig, device: torch.device):
+    model = instantiate(config.model)
+    model = model.to(device)
+    model.eval()
     return model
 
 
-def get_dataloader(config, fabric):
-    return fabric.setup_dataloaders(instantiate(config.dataset))
-
-
-def add_to_results(res_d, encs, labels, idxs):
-    for iter, (enc, idx) in enumerate(zip(encs, idxs)):
-        res_d[idx.item()] = {
-            "enc": enc, 
-            "labels": {k: v[iter].item() for k, v in labels.items()}}
-
-
-def save_results(config, res_d, file_id):
-    path_out = Path("results") / config.exp.run_id
-    path_out.mkdir(parents = True, exist_ok = True)
-
-    file_id = file_id // config.exp.save_every
-    path_out_file = path_out / f"encodings_{file_id}.pt"
-
-    if path_out_file.exists():
-        path_out_file = path_out / f"encodings_{file_id + 1}.pt"
-
-    torch.save(res_d, path_out_file)
+def build_dataloader(config: DictConfig) -> DataLoader:
+    dataset = instantiate(config.dataset)
+    return DataLoader(
+        dataset,
+        batch_size=config.experiment.batch_size,
+        shuffle=False,
+        num_workers=config.experiment.num_workers,
+        drop_last=False,
+    )
 
 
 def run_encode(config: DictConfig):
 
-    log.info(f'Launching Fabric')
-    fabric = get_fabric(config)
+    cache_dir = Path("variables")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "vars_celeba_diffae.pt"
 
-    log.info(f'Building components')
-    model = get_components(config, fabric)
+    if cache_path.exists():
+        log.info("Loading cached encodings from %s", cache_path)
+        vars = torch.load(cache_path, map_location="cpu")
+        return vars["encs"].float(), vars["labels"].float()
 
-    log.info(f'Initializing dataloader')
-    dataloader = get_dataloader(config, fabric)
+    experiment_cfg = config.experiment
 
-    iter_counter = 0
-    results = {}
-    n_batches = math.ceil(len(dataloader.dataset) / dataloader.batch_size)
+    log.info("Seeding RNGs with %s", experiment_cfg.seed)
+    seed_everything(int(experiment_cfg.seed))
 
-    for batch_id, batch in tqdm(enumerate(dataloader)):
+    device = torch.device(experiment_cfg.device)
+    log.info(f"Using device {device}")
 
-        iter_counter += 1
+    log.info('Building components')
+    model = build_model(config, device)
+
+    log.info('Initializing dataloader')
+    dataloader = build_dataloader(config)
+
+    log.info("Encoding entire CelebA dataset for latent extraction.")
+
+    encodings = []
+
+    for batch in tqdm(dataloader):
 
         with torch.no_grad():
-            batch_x, batch_labels, batch_idx = batch
-            batch_encs = model.encode(batch_x)
-            
-        assert batch_idx.unique().shape[0] == batch_x.shape[0]
-        add_to_results(results, batch_encs, batch_labels, batch_idx)
+            batch_x = batch[0].to(device)
+            batch_encs = model.encode(batch_x).detach().cpu()
 
-        if iter_counter % config.exp.save_every == 0 or iter_counter == n_batches:
-            save_results(config, results, batch_id)
-            results = {}
+        encodings.append(batch_encs)
+
+    encodings = torch.cat(encodings)
+    labels = dataloader.dataset.get_labels().float().clamp(min=0)  # type: ignore
+
+    vars = {
+            "encs": encodings,
+            "labels": labels
+        }
+
+    torch.save(vars, cache_path)
+    log.info("Encodings shape: %s", encodings.shape)
+    log.info("Labels shape: %s", labels.shape)
+    log.info("Saved encodings to %s", cache_path)
+
+    return encodings, labels

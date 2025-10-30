@@ -1,5 +1,5 @@
-from templates import *
-from templates_latent import *
+from models.src_diffae.templates import *
+from models.src_diffae.templates_latent import *
 
 if __name__ == '__main__':
     gpus = [0, 1, 2, 3]

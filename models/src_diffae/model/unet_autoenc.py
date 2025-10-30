@@ -6,7 +6,7 @@ from torch.nn.functional import silu
 
 from models.src_diffae.model.latentnet import *
 from models.src_diffae.model.unet import *
-from choices import *
+from models.src_diffae.choices import *
 
 
 @dataclass

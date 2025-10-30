@@ -1,5 +1,5 @@
-from templates_cls import *
-from experiment_classifier import *
+from models.src_diffae.templates_cls import *
+from models.src_diffae.experiment_classifier import *
 
 if __name__ == '__main__':
     # need to first train the diffae autoencoding model & infer the latents
