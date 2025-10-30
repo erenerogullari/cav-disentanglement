@@ -358,8 +358,11 @@ def run(cfg: DictConfig) -> None:
         class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": ap
         for class_idx, ap in pr_results["per_class_ap"].items()     # type: ignore
     }
+    per_class_avg_recall = {
+        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": float(np.mean(curve["recall"]))     # type: ignore
+        for class_idx, curve in pr_results["curves"].items()     # type: ignore
+    }
     log.info("Test macro AP: %.4f", pr_results["macro_ap"])
-    log.info("Test per-class AP: %s", per_class_ap_named)
 
     media_dir = Path(get_original_cwd()) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
@@ -375,6 +378,22 @@ def run(cfg: DictConfig) -> None:
     plt.savefig(pr_plot_path, format="pdf")
     plt.close()
     log.info("Saved precision-recall curves to %s", pr_plot_path)
+
+    plt.figure()
+    recalls = [per_class_avg_recall[name] for name in per_class_ap_named]
+    aps = [per_class_ap_named[name] for name in per_class_ap_named]
+    plt.scatter(recalls, aps, s=20)
+    plt.xlabel("Average Recall")
+    plt.ylabel("Average Precision")
+    plt.title("Per-class AP vs. Average Recall (Test)")
+    plt.xlim(0.0, 1.0)
+    plt.ylim(0.0, 1.0)
+    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
+    plt.tight_layout()
+    ap_scatter_path = media_dir / f"precision_recall_ap_scatter_{cfg.model.name}_{cfg.dataset.name}.pdf"
+    plt.savefig(ap_scatter_path, format="pdf")
+    plt.close()
+    log.info("Saved per-class AP scatter plot to %s", ap_scatter_path)
 
     checkpoint_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
