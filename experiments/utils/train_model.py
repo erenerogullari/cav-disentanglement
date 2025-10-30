@@ -12,6 +12,8 @@ import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
+from sklearn.metrics import f1_score, recall_score, accuracy_score, precision_recall_curve, average_precision_score
+import matplotlib.pyplot as plt
 
 from datasets import get_dataset
 from hydra.utils import get_original_cwd
@@ -70,15 +72,67 @@ def _prepare_targets(targets, device: torch.device) -> torch.Tensor:
     return targets.float()
 
 
-def _multilabel_accuracy(outputs: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5) -> float:
-    probs = torch.sigmoid(outputs)
-    preds = (probs >= threshold).to(dtype=targets.dtype)
-    if preds.ndim == 1:
-        preds = preds.unsqueeze(1)
-    if targets.ndim == 1:
-        targets = targets.unsqueeze(1)
-    matches = preds.eq(targets)
-    return matches.float().mean().item()
+def _multilabel_stats(outputs: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5):
+    probs = torch.sigmoid(outputs).detach().cpu()
+    preds = (probs >= threshold).int()
+    true = targets.detach().cpu().int()
+
+    # macro averages treat each class equally, revealing classes that are always missed
+    macro_f1 = f1_score(true, preds, average="macro", zero_division=0)
+    macro_recall = recall_score(true, preds, average="macro", zero_division=0)
+    accuracy = accuracy_score(true, preds)
+
+    return {
+        "f1": macro_f1,
+        "recall": macro_recall,
+        "accuracy": accuracy,
+    }
+
+def _precision_recall_analysis(
+    logits: torch.Tensor,   # shape (N, C), raw model outputs
+    targets: torch.Tensor,  # shape (N, C), {0,1}
+) -> Dict[str, object]:
+    """
+    Returns per-class precision/recall curves and AP, plus macro-averaged AP.
+    """
+    if logits.ndim != 2 or targets.ndim != 2:
+        raise ValueError("Expected logits and targets to be 2D tensors of shape (N, C).")
+
+    probs = torch.sigmoid(logits).detach().cpu().numpy()
+    true = targets.detach().cpu().numpy()
+    num_classes = probs.shape[1]
+
+    curves = {}
+    per_class_ap = {}
+    ap_values = []
+
+    for class_idx in range(num_classes):
+        y_true = true[:, class_idx]
+        y_score = probs[:, class_idx]
+
+        if np.sum(y_true) == 0:
+            precision = np.array([1.0])
+            recall = np.array([0.0])
+            thresholds = np.array([])
+            ap = 0.0
+        else:
+            precision, recall, thresholds = precision_recall_curve(y_true, y_score)
+            ap = float(average_precision_score(y_true, y_score))
+
+        curves[class_idx] = {
+            "precision": precision,
+            "recall": recall,
+            "thresholds": thresholds,
+        }
+        per_class_ap[class_idx] = ap
+        ap_values.append(ap)
+
+    macro_ap = float(np.mean(ap_values)) if ap_values else 0.0
+    return {
+        "curves": curves,
+        "per_class_ap": per_class_ap,
+        "macro_ap": macro_ap,
+    }
 
 
 def _train_epoch(
@@ -90,7 +144,7 @@ def _train_epoch(
 ) -> Tuple[float, float]:
     model.train()
     total_loss = 0.0
-    total_correct = 0.0
+    total_acc = 0.0
     total_samples = 0
 
     for inputs, targets in dataloader:
@@ -105,12 +159,12 @@ def _train_epoch(
 
         batch_size = inputs.size(0)
         total_loss += loss.item() * batch_size
-        batch_acc = _multilabel_accuracy(outputs.detach(), targets)
-        total_correct += batch_acc * batch_size
+        batch_stats = _multilabel_stats(outputs.detach(), targets)
+        total_acc += batch_stats["accuracy"] * batch_size
         total_samples += batch_size
 
     avg_loss = total_loss / total_samples
-    avg_acc = total_correct / total_samples
+    avg_acc = total_acc / total_samples
     return avg_loss, avg_acc
 
 
@@ -119,14 +173,15 @@ def _evaluate(
     dataloader: Optional[DataLoader],
     criterion,
     device: torch.device,
-) -> Tuple[float, float]:
+) -> Tuple[float, Dict[str, float], torch.Tensor, torch.Tensor]:
     if dataloader is None or len(dataloader) == 0:
         raise ValueError("Dataloader for evaluation is None or empty.")
 
     model.eval()
     total_loss = 0.0
-    total_correct = 0.0
     total_samples = 0
+    all_outputs = []
+    all_targets = []
 
     with torch.no_grad():
         for inputs, targets in dataloader:
@@ -136,13 +191,15 @@ def _evaluate(
             loss = criterion(outputs, targets)
             batch_size = inputs.size(0)
             total_loss += loss.item() * batch_size
-            batch_acc = _multilabel_accuracy(outputs, targets)
-            total_correct += batch_acc * batch_size
             total_samples += batch_size
+            all_outputs.append(outputs.detach().cpu())
+            all_targets.append(targets.detach().cpu())
 
     avg_loss = total_loss / total_samples
-    avg_acc = total_correct / total_samples
-    return avg_loss, avg_acc
+    logits = torch.cat(all_outputs, dim=0)
+    targets_tensor = torch.cat(all_targets, dim=0)
+    stats = _multilabel_stats(logits, targets_tensor)
+    return avg_loss, stats, logits, targets_tensor
 
 
 def _build_loaders(dataset, shuffle: bool, cfg_train: DictConfig):
@@ -263,19 +320,21 @@ def run(cfg: DictConfig) -> None:
         train_loss, train_acc = _train_epoch(model, train_loader, criterion, optimizer, device)
 
         if val_loader is not None:
-            val_loss, val_acc = _evaluate(model, val_loader, criterion, device)
-            if cfg.train.save_best and val_acc > best_metric:
-                best_metric = val_acc
+            val_loss, val_stats, _, _ = _evaluate(model, val_loader, criterion, device)
+            if cfg.train.save_best and val_stats["accuracy"] > best_metric:
+                best_metric = val_stats["accuracy"]
                 best_state = copy.deepcopy(model.state_dict())
                 best_epoch = epoch
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
                 log.info(
-                    "Epoch %03d | train_loss=%.4f train_acc=%.4f | val_loss=%.4f val_acc=%.4f",
+                    "Epoch %03d | train_loss=%.4f train_acc=%.4f | val_loss=%.4f val_acc=%.4f val_f1=%.4f val_recall=%.4f",
                     epoch,
                     train_loss,
                     train_acc,
                     val_loss,
-                    val_acc,
+                    val_stats["accuracy"],
+                    val_stats["f1"],
+                    val_stats["recall"],
                 )
         else:
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
@@ -285,8 +344,37 @@ def run(cfg: DictConfig) -> None:
         log.info("Loading best model from epoch %d with val_acc=%.4f", best_epoch, best_metric)
         model.load_state_dict(best_state)
 
-    test_loss, test_acc = _evaluate(model, test_loader, criterion, device)
-    log.info("Test metrics | loss=%.4f acc=%.4f", test_loss, test_acc)
+    test_loss, test_stats, test_logits, test_targets = _evaluate(model, test_loader, criterion, device)
+    log.info(
+        "Test metrics | loss=%.4f acc=%.4f f1=%.4f recall=%.4f",
+        test_loss,
+        test_stats["accuracy"],
+        test_stats["f1"],
+        test_stats["recall"],
+    )
+
+    pr_results = _precision_recall_analysis(test_logits, test_targets)
+    per_class_ap_named = {
+        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": ap
+        for class_idx, ap in pr_results["per_class_ap"].items()     # type: ignore
+    }
+    log.info("Test macro AP: %.4f", pr_results["macro_ap"])
+    log.info("Test per-class AP: %s", per_class_ap_named)
+
+    media_dir = Path(get_original_cwd()) / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    plt.switch_backend("Agg")
+    plt.figure()
+    for class_idx, curve in pr_results["curves"].items():   # type: ignore
+        plt.plot(curve["recall"], curve["precision"])
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curves (Test)")
+    plt.tight_layout()
+    pr_plot_path = media_dir / f"precision_recall_{cfg.model.name}_{cfg.dataset.name}.pdf"
+    plt.savefig(pr_plot_path, format="pdf")
+    plt.close()
+    log.info("Saved precision-recall curves to %s", pr_plot_path)
 
     checkpoint_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
