@@ -5,8 +5,8 @@ from numbers import Number
 
 import torch as th
 import torch.nn.functional as F
-from choices import *
-from config_base import BaseConfig
+from models.src_diffae.choices import *
+from models.src_diffae.config_base import BaseConfig
 from torch import nn
 
 from models.src_diffae.model.nn import (avg_pool_nd, conv_nd, linear, normalization,

@@ -397,16 +397,13 @@ class ElementsDataset(BaseDataset):
         return self.labels[i]
 
     def get_labels(self) -> torch.Tensor:
-        return self.labels.clone()
+        return self.concept_labels.clone()
 
     def get_concept_names(self) -> List[str]:
         return list(self.concept_names)
 
     def get_class_names(self) -> List[str]:
         return list(self.class_names)
-
-    def get_concept_labels(self) -> torch.Tensor:
-        return self.concept_labels.clone()
 
     def get_class_labels(self) -> torch.Tensor:
         return self.labels.clone()

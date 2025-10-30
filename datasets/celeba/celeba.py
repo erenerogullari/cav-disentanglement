@@ -16,13 +16,13 @@ celeba_augmentation = T.Compose([
     # T.RandomApply(transforms=[T.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5))], p=.25),
     T.RandomApply(transforms=[T.RandomRotation(degrees=(0, 30))], p=5),
     T.RandomApply(transforms=[T.ColorJitter(brightness=.1, saturation=.1, hue=.1)], p=.25),
-    T.RandomApply(transforms=[T.Pad(10, fill=-(46.9 / 255.) / (22.6 / 255.)), T.Resize(224)], p=.25)
+    T.RandomApply(transforms=[T.Pad(10, fill=0), T.Resize(224)], p=.25)
 ])
 
 
 def get_celeba_dataset(data_paths, normalize_data=True, image_size=224, artifact_ids_file=None, **kwargs):
     fns_transform = [
-        T.Resize((image_size, image_size), interpolation=T.functional.InterpolationMode.BICUBIC),
+        T.Resize((image_size, image_size), interpolation=T.InterpolationMode.BICUBIC),
         T.ToTensor()
     ]
 
@@ -43,7 +43,7 @@ class CelebADataset(BaseDataset):
         ds = CelebA(root=data_paths[0], split='all', download=False, transform=transform)
         self.path = f"{data_paths[0]}/{ds.base_folder}"
         
-        self.attributes = pd.DataFrame(ds.attr, columns=ds.attr_names[:-1])
+        self.attributes = pd.DataFrame(ds.attr, columns=ds.attr_names[:-1]) # type: ignore
         
         USE_SUBSET = True
         if USE_SUBSET:
@@ -98,9 +98,9 @@ class CelebADataset(BaseDataset):
             image = self.transform(image)
 
         if self.do_augmentation:
-            image = self.augmentation(image)
+            image = self.augmentation(image) # type: ignore
 
-        return image.float(), target
+        return image.float(), target # type: ignore
 
     def get_sample_name(self, i):
         return self.metadata.iloc[i]['image_id']
@@ -116,4 +116,6 @@ class CelebADataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    ds = CelebADataset(["datasets"], transform=None, augmentation=None)
+    data_paths = ["/Users/erogullari/datasets/"]
+    ds = get_celeba_dataset(data_paths, normalize_data=True, image_size=224)
+    print(len(ds))

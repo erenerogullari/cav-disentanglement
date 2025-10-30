@@ -1,4 +1,4 @@
-from experiment import *
+from models.src_diffae.experiment import *
 
 try:
     from models.src_diffae.config import TrainConfig

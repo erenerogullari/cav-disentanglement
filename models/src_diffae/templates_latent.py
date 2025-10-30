@@ -1,4 +1,4 @@
-from templates import *
+from models.src_diffae.templates import *
 
 
 def latent_diffusion_config(conf: TrainConfig):

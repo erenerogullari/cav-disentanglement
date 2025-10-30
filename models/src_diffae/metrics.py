@@ -10,12 +10,12 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm.autonotebook import tqdm, trange
 from models.src_diffae.dataset import Dataset, SubsetDataset
 
-from renderer import *
-from config import *
-from diffusion import Sampler
-from dist_utils import *
+from models.src_diffae.renderer import *
+from models.src_diffae.config import *
+from models.src_diffae.diffusion import Sampler
+from models.src_diffae.dist_utils import *
 import lpips
-from ssim import ssim
+from models.src_diffae.ssim import ssim
 
 
 def make_subset_loader(conf: TrainConfig,
