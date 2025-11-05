@@ -116,6 +116,8 @@ class CelebADataset(BaseDataset):
 
 
 if __name__ == "__main__":
+    import torchvision
     data_paths = ["/Users/erogullari/datasets/"]
     ds = get_celeba_dataset(data_paths, normalize_data=True, image_size=224)
-    print(len(ds))
+    img, _ = ds[0]
+    torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, "results/celeba_sample.png")

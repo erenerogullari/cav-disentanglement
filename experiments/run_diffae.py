@@ -4,7 +4,7 @@ import torch
 import logging
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from experiments.diffae import run_encode, run_move_encs, train_dir_model
+from experiments.diffae import run_encode, run_move_encs, train_dir_model, run_decode
 
 log = logging.getLogger(__name__)
 
@@ -25,13 +25,12 @@ def run(cfg: DictConfig) -> None:
     log.info("2. Training direction model:")
     dir_models = train_dir_model(cfg, encodings, labels)
 
-    # log.info("3. Moving encodings to desired label:")
-    # moved_encodings = run_move_encs(cfg, encodings, labels, dir_models)
+    log.info("3. Moving encodings to desired label:")
+    moved_encodings, moved_idxs = run_move_encs(cfg, encodings, labels, dir_models)
 
-    # log.info("4. Decoding moved encodings to images:")
+    log.info("4. Decoding moved encodings to images:")
+    run_decode(cfg, moved_encodings, moved_idxs)
     
-
-
     log.info("Experiment succesfully completed.")
 
 if __name__ == "__main__":
