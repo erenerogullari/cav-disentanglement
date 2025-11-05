@@ -36,7 +36,7 @@ def _get_features(batch, layer_name, attribution, canonizers, cav_mode, device):
     return features
 
 
-def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> torch.Tensor:
+def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> Tuple[torch.Tensor, torch.Tensor]:
     """Extract latent representations from a specified layer of the model for the entire dataset.
     Args:
         cfg (DictConfig): Configuration object containing model and dataset parameters.
@@ -44,15 +44,18 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
         dataset (torch.utils.data.Dataset): The dataset for which to extract features.
     Returns:
         torch.Tensor: A tensor containing the extracted latent representations.
+        torch.Tensor: A tensor containing the corresponding labels.
     """
     cache_dir = Path(get_original_cwd()) / "variables"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_name = f"latents_{cfg.dataset.name}_{cfg.cav.layer}_{cfg.model.name}.pt"
+    cache_name = f"vars_{cfg.dataset.name}_{cfg.cav.layer}_{cfg.model.name}.pth"
     cache_path = cache_dir / cache_name
 
     if cache_path.exists():
         log.info(f"Loading cached latents from {cache_path}.")
-        x_latent_all = torch.load(cache_path, weights_only=True)
+        vars = torch.load(cache_path, weights_only=True)
+        x_latent_all = vars["encs"]
+        labels = vars["labels"]
     else:
         log.info("No cached latents found. Extracting latents...")
         dataloader = DataLoader(dataset, batch_size=cfg.train.batch_size, num_workers=cfg.train.num_workers, shuffle=False)
@@ -61,13 +64,18 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
 
         x_latent_all = []
         for batch in tqdm(dataloader):
-            x = batch[0]
+            x, _ = batch
             x_latent = _get_features(x, cfg.cav.layer, attribution, canonizer, cfg.cav.cav_mode, device=cfg.train.device)
             x_latent = x_latent.detach().cpu()
             x_latent_all.append(x_latent)
         x_latent_all = torch.cat(x_latent_all)
 
-        torch.save(x_latent_all, cache_path)
+        vars = {
+            "encs": x_latent_all,
+            "labels": dataset.get_labels().clamp(min=0)  # type: ignore
+        }
+        torch.save(vars, cache_path)
+        
         log.info(f"Saved extracted latents to {cache_path}.")
 
-    return x_latent_all
+    return x_latent_all, labels

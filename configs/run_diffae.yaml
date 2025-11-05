@@ -1,1 +1,27 @@
-# TODO
+defaults:
+  - _self_
+  - hardware@experiment: workstation
+  - model: diffae
+  - dataset: celeba
+  - cav_model@dir_model: pattern_cav
+
+experiment:
+  run_id: diffae_celeba
+  seed: 42
+  format: png
+
+
+dir_model:
+  alphas: [0.0, 0.01, 0.1, 1.0, 10.0, 100.0]
+  n_epochs: 200
+  learning_rate: 0.001
+  random_seed: 42
+
+move_encs:
+  target_concept: Wearing_Necktie
+  target_label: 1
+  num_images: 20
+  step_sizes: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+  move_method: signal
+  cav_mode: max
+  normalize_from_data: true

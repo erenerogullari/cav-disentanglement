@@ -130,19 +130,13 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
                                                 n_class=cfg.model.n_class).to(device)
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    dataset_cfg = OmegaConf.to_container(cfg.dataset, resolve=True)
-    assert type(dataset_cfg) is dict
-    dataset_name = dataset_cfg.pop("name")
-    dataset_fn = get_dataset(dataset_name)
-    dataset = dataset_fn(**dataset_cfg) # type: ignore
     dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
                                         normalize_data=cfg.dataset.normalize_data,
                                         image_size=cfg.dataset.img_size)
-    labels = dataset.get_labels().to(torch.float32).clamp(min=0)
     concept_names = dataset.get_concept_names()
 
     log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
-    x_latent = extract_latents(cfg, model, dataset)
+    x_latent, labels = extract_latents(cfg, model, dataset)
     n_concepts, n_features = labels.shape[1], x_latent.shape[1]
     train_latents, train_labels, test_latents, test_labels = train_test_split(x_latent, labels, cfg.train.train_ratio)
     train_dataset = TensorDataset(train_latents, train_labels)
