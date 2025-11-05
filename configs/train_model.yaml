@@ -10,7 +10,7 @@ experiment:
 train:
   num_epochs: 500
   learning_rate: 1.0e-4
-  weight_decay: 0.0
+  weight_decay: 1.0e-6
   val_split: 0.1
   test_split: 0.1
   random_seed: 42

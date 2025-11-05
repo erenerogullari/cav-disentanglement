@@ -78,14 +78,16 @@ def _multilabel_stats(outputs: torch.Tensor, targets: torch.Tensor, threshold: f
     true = targets.detach().cpu().int()
 
     # macro averages treat each class equally, revealing classes that are always missed
-    macro_f1 = f1_score(true, preds, average="macro", zero_division=0)
-    macro_recall = recall_score(true, preds, average="macro", zero_division=0)
-    accuracy = accuracy_score(true, preds)
+    macro_f1 = f1_score(true, preds, average="samples", zero_division=0)
+    macro_recall = recall_score(true, preds, average="samples", zero_division=0)
+    matches = (preds == true).float()
+    per_class_acc = matches.mean(dim=0)
+    macro_acc = float(per_class_acc.mean().item()) if per_class_acc.numel() else 0.0
 
     return {
         "f1": macro_f1,
         "recall": macro_recall,
-        "accuracy": accuracy,
+        "accuracy": macro_acc,
     }
 
 def _precision_recall_analysis(
@@ -321,8 +323,8 @@ def run(cfg: DictConfig) -> None:
 
         if val_loader is not None:
             val_loss, val_stats, _, _ = _evaluate(model, val_loader, criterion, device)
-            if cfg.train.save_best and val_stats["accuracy"] > best_metric:
-                best_metric = val_stats["accuracy"]
+            if cfg.train.save_best and val_stats["f1"] > best_metric:
+                best_metric = val_stats["f1"]
                 best_state = copy.deepcopy(model.state_dict())
                 best_epoch = epoch
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
@@ -341,7 +343,7 @@ def run(cfg: DictConfig) -> None:
                 log.info("Epoch %03d | train_loss=%.4f train_acc=%.4f", epoch, train_loss, train_acc)
 
     if best_state is not None:
-        log.info("Loading best model from epoch %d with val_acc=%.4f", best_epoch, best_metric)
+        log.info("Loading best model from epoch %d with val_f1=%.4f", best_epoch, best_metric)
         model.load_state_dict(best_state)
 
     test_loss, test_stats, test_logits, test_targets = _evaluate(model, test_loader, criterion, device)

@@ -5,8 +5,8 @@ shuffle: true
 image_size: 224
 num_samples: 20000
 element_count: 3
-element_size: 72
-element_size_delta: 12
+element_size: 64
+element_size_delta: 8
 element_seed: 2024
 loc_seed: 1337
 name: elements
