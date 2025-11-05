@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from tqdm import tqdm
 from zennit.core import stabilize
 
@@ -26,55 +26,66 @@ def seed_everything(seed: Optional[int]) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def build_dataloader(config: DictConfig) -> DataLoader:
-    dataset = instantiate(config.dataset)
-    return DataLoader(
-        dataset,
-        batch_size=config.experiment.batch_size,
-        shuffle=bool(config.dataset.shuffle),
-        num_workers=config.experiment.num_workers,
-        drop_last=False,
-    )
+def get_target_encodings(move_cfg: DictConfig, dataset: Dataset, labels: torch.Tensor, target_label: int, target_concept: str):
+    concept_names = dataset.get_concept_names() # type: ignore
+    max_images = getattr(move_cfg, "num_images", None)
+    if target_concept not in concept_names:
+        raise ValueError(f"Concept '{target_concept}' not found in dataset concepts: {concept_names}")
+    
+    select_label = 1 - target_label
+    concept_idx = concept_names.index(target_concept)
+    idx_to_move = (labels[:, concept_idx] == select_label).nonzero(as_tuple=True)[0]
+
+    if idx_to_move.size(0) == 0:
+        raise RuntimeError(f"No samples found for concept '{target_concept}' with label '{select_label}'.")
+    elif max_images is not None and idx_to_move.size(0) > int(max_images):
+        max_images = int(max_images)
+        perm = torch.randperm(idx_to_move.size(0))[:max_images]
+        idx_to_move = idx_to_move[perm]
+
+    return idx_to_move, concept_idx
 
 
-def load_direction_model(config: DictConfig, device: torch.device):
-    dir_model = instantiate(config.direction_model)
-    state_dict = torch.load(config.experiment.direction_checkpoint, map_location="cpu")
-    dir_model.load_state_dict(state_dict, strict=False)
-    dir_model = dir_model.to(device)
-    dir_model.eval()
-    dir_model.requires_grad_(False)
-    return dir_model
+def compute_stats(encodings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    means = encodings.mean(dim=0)
+    stds = encodings.std(dim=0)
+    return means, stds
 
 
-def normalize(experiment_cfg, dir_model, x, means, stds):
-    if experiment_cfg.normalize_from_data:
+def normalize(move_cfg, dir_model, x, means, stds):
+    if move_cfg.normalize_from_data:
         return (x - means) / stds
     else:
         return dir_model.normalize(x)
 
 
-def denormalize(experiment_cfg, dir_model, x, means, stds):
-    if experiment_cfg.normalize_from_data:
+def denormalize(move_cfg, dir_model, x, means, stds):
+    if move_cfg.normalize_from_data:
         return x * stds + means
     else:
         return dir_model.denormalize(x)
 
 
-def move_encs(experiment_cfg, data, w_dir, b_dir, median_logit, mean_length=None):
+def move_encs(move_cfg, data, w_dir, b_dir, median_logit, mean_length=None, step_size: Optional[float] = None):
 
-    if experiment_cfg.move_method == "adaptive":
+    if move_cfg.move_method == "adaptive":
     
         step_sizes = (median_logit - b_dir - data @ w_dir) / (w_dir @ w_dir)
         return data + step_sizes.unsqueeze(1) * w_dir.unsqueeze(0).repeat(data.shape[0], 1)
     
-    elif experiment_cfg.move_method == "constant":
+    elif move_cfg.move_method == "constant":
+
+        if step_size is None:
+            raise ValueError("step_size must be provided when using 'constant' move_method.")
     
         signs = (median_logit - b_dir - data @ w_dir).sign().unsqueeze(1)
         w_dir = F.normalize(w_dir, dim = 0).unsqueeze(0).repeat(data.shape[0], 1)
-        return data + signs * experiment_cfg.step_size * data.shape[1] ** (1 / 2) * w_dir
+        return data + signs * step_size * data.shape[1] ** (1 / 2) * w_dir
     
-    elif experiment_cfg.move_method == "signal":
+    elif move_cfg.move_method == "signal":
+
+        if step_size is None:
+            raise ValueError("step_size must be provided when using 'signal' move_method.")
 
         outs = data + 0
         is_2dim = data.dim() == 2
@@ -84,23 +95,24 @@ def move_encs(experiment_cfg, data, w_dir, b_dir, median_logit, mean_length=None
         beta = (cav * cav).sum(0)
         mag = (mean_length - length).to(outs) / stabilize(beta)
 
-        v = cav.reshape(1, *outs.shape[1:]) if experiment_cfg.cav_mode == "full" else cav[..., None, None]
+        v = cav.reshape(1, *outs.shape[1:]) if move_cfg.cav_mode == "full" else cav[..., None, None]
         addition = (mag[:, None, None, None] * v)
-        acts = outs + addition * experiment_cfg.step_size
+        acts = outs + addition * step_size
         acts = acts.squeeze(-1).squeeze(-1) if is_2dim else acts
         return acts
     
-    elif experiment_cfg.move_method == "no_move":
+    elif move_cfg.move_method == "no_move":
         return data
     
     else:
-        raise ValueError(f'Unknown move method: {experiment_cfg.move_method}')
+        raise ValueError(f"Unknown move method: {move_cfg.move_method}")
 
 
 
-def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Tensor, dir_models: Dict[float, nn.Module]) -> None:
+def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Tensor, dir_models: Dict[float, nn.Module]) -> Tuple[Dict[float, Dict[Optional[float], torch.Tensor]], torch.Tensor]:
 
     experiment_cfg = config.experiment
+    move_cfg = config.move_encs 
 
     log.info("Seeding RNGs with %s", experiment_cfg.seed)
     seed_everything(int(experiment_cfg.seed))
@@ -108,81 +120,71 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
     device = torch.device(experiment_cfg.device)
     log.info("Using device %s", device)
 
-    log.info("Initializing dataloader")
-    dataloader = build_dataloader(config)
-    dataset = getattr(dataloader, "dataset", None)
-    if dataset is None:
-        raise AttributeError("The instantiated dataloader does not expose a dataset attribute.")
+    log.info("Finding data to move")
+    dataset = instantiate(config.dataset)
+    idx_to_move, concept_idx = get_target_encodings(
+        move_cfg=move_cfg,
+        dataset=dataset,
+        labels=labels,
+        target_label=move_cfg.target_label,
+        target_concept=move_cfg.target_concept,
+    )
+    encs_to_move = encodings[idx_to_move].to(device)
+    encs_to_keep = encodings[~torch.isin(torch.arange(encodings.shape[0]), idx_to_move)].to(device)
+    log.info("Found %s samples to move.", encs_to_move.size(0))
 
-    log.info("Building components")
-    dir_model = load_direction_model(config, device)
 
-    log.info("Searching for data to keep")
-    if not hasattr(dataset, "label_to_id") or not hasattr(dataset, "id_to_label"):
-        raise AttributeError("Dataset must provide 'label_to_id' and 'id_to_label' attributes.")
+    means, stds = compute_stats(encodings.to(device))
+    step_sizes = getattr(move_cfg, "step_sizes", None)
+    if step_sizes is None:
+        raise ValueError("step_sizes must be provided in move_encs config.")
+    else:
+        step_sizes = [float(step) for step in step_sizes]
 
-    label_to_id = dataset.label_to_id
-    id_to_label = dataset.id_to_label
-    label_name = experiment_cfg.concept_name
-    label_id = label_to_id[label_name]
-
-    encs_to_keep = []
-    encs_to_move = []
-    idx_to_move = []
-    labels_to_move = []
-
-    for batch in tqdm(dataloader):
-        _, batch_enc, batch_label, batch_idx = batch
-        batch_label_spec = batch_label[:, label_id]
-        chosen_to_move = batch_label_spec == experiment_cfg.concept_label_to_move
-        encs_to_keep.append(batch_enc[~chosen_to_move])
-        encs_to_move.append(batch_enc[chosen_to_move])
-        idx_to_move.append(batch_idx[chosen_to_move])
-        labels_to_move.append(batch_label[chosen_to_move])
-
-    if not encs_to_move or not idx_to_move:
-        raise RuntimeError(f"No samples found with label value {experiment_cfg.concept_label_to_move} for '{label_name}'.")
-
-    idx_to_move = torch.cat(idx_to_move).to(device)
-    encs_to_keep = torch.cat(encs_to_keep).to(device)
-    encs_to_move = torch.cat(encs_to_move).to(device)
-    labels_to_move = torch.cat(labels_to_move).to(device)
-
-    log.info("Computing median logit")
-    means = torch.as_tensor(dataset.means, device=device, dtype=encs_to_keep.dtype)
-    stds = torch.as_tensor(dataset.stds, device=device, dtype=encs_to_keep.dtype)
-
-    encs_to_keep = normalize(experiment_cfg, dir_model, encs_to_keep, means, stds)
+    moved_encs: Dict[float, Dict[Optional[float], torch.Tensor]] = {}
 
     with torch.no_grad():
-        
-        w_dir, b_dir = dir_model.get_direction(label_id)  
-        w_dir = w_dir.to(device)
-        b_dir = b_dir.to(device)
+        for alpha, dir_model in sorted(dir_models.items(), key=lambda item: item[0]):
+            log.info("Moving encodings with direction model alpha=%s", alpha)
+            dir_model = dir_model.to(device)
+            dir_model.eval()
+            dir_model.requires_grad_(False)
 
-        if experiment_cfg.move_method == "signal":
-            w_dir = F.normalize(w_dir, dim=0)
-            median_logit = None
-            mean_length = (encs_to_keep.flatten(start_dim=1)  * w_dir).sum(1).mean(0)
-        else:
-            mean_length = None
-            logits = dir_model(encs_to_keep)[:, label_id]
-            median_logit = logits.median()
+            encs_to_keep_norm = normalize(move_cfg, dir_model, encs_to_keep, means, stds)
+            encs_to_move_norm = normalize(move_cfg, dir_model, encs_to_move, means, stds)
 
-        log.info("Editing encodings")
-        encs_to_move = normalize(experiment_cfg, dir_model, encs_to_move, means, stds)
-        encs_to_move = move_encs(experiment_cfg, encs_to_move, w_dir, b_dir, median_logit, mean_length)
-        encs_to_move = denormalize(experiment_cfg, dir_model, encs_to_move, means, stds)
+            w_dir, b_dir = dir_model.get_direction(concept_idx)    # type: ignore
+            w_dir = w_dir.to(device)
+            b_dir = b_dir.to(device)
 
-    log.info("Saving modified encodings")
-    results = {}
+            if move_cfg.move_method == "signal":
+                w_dir_for_move = F.normalize(w_dir, dim=0)
+                mean_length = (encs_to_keep_norm.flatten(start_dim=1) * w_dir_for_move).sum(1).mean(0)
+                median_logit = None
+            else:
+                w_dir_for_move = w_dir
+                mean_length = None
+                logits = dir_model(encs_to_keep_norm)[:, concept_idx]
+                median_logit = logits.median()
 
-    for iter, (enc, idx) in enumerate(zip(encs_to_move, idx_to_move)):
-        labels = labels_to_move[iter].detach().cpu()
-        labels = {k: v.item() for k, v in zip(id_to_label, labels)}
-        results[idx.item()] = {"enc": enc.detach().cpu(), "labels": labels}
+            dir_step_results: Dict[Optional[float], torch.Tensor] = {}
+            for step_size in step_sizes:
+                if move_cfg.move_method in {"constant", "signal"} and step_size is None:
+                    raise ValueError(f"'step_sizes' must be provided for move_method '{move_cfg.move_method}'.")
 
-    path_out = Path("results") / experiment_cfg.run_id
-    path_out.mkdir(parents = True, exist_ok = True)
-    
-    torch.save(results, path_out / "encodings.pt")
+                moved_norm = move_encs(
+                    move_cfg,
+                    encs_to_move_norm,
+                    w_dir_for_move,
+                    b_dir,
+                    median_logit,
+                    mean_length,
+                    step_size=step_size,
+                )
+                moved = denormalize(move_cfg, dir_model, moved_norm, means, stds)
+                dir_step_results[step_size] = moved.detach().cpu()
+
+            moved_encs[alpha] = dir_step_results
+            dir_models[alpha] = dir_model.to("cpu")
+
+    return moved_encs, idx_to_move.detach().cpu()

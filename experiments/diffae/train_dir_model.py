@@ -33,7 +33,7 @@ def find_cached_dir_models(config: DictConfig, alphas: list, cache_dir: Path) ->
         cache_path = cache_dir / f"{config.dir_model.name}:alpha{alpha}.pt"
         if cache_path.exists():
             log.info(f"Found cached CAVs for alpha={alpha} in {cache_dir}.")
-            dir_model = torch.load(cache_path, map_location="cpu")
+            dir_model = torch.load(cache_path, map_location="cpu", weights_only=False)
             if hasattr(dir_model, "eval"):
                 dir_model.eval()
             dir_models[alpha] = dir_model
