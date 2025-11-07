@@ -8,7 +8,7 @@ experiment:
   name: train_model
 
 train:
-  num_epochs: 500
+  num_epochs: 300
   learning_rate: 1.0e-3
   momentum: 0.9
   weight_decay: 1.0e-4
