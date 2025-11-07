@@ -120,4 +120,4 @@ if __name__ == "__main__":
     data_paths = ["/Users/erogullari/datasets/"]
     ds = get_celeba_dataset(data_paths, normalize_data=True, image_size=224)
     img, _ = ds[0]
-    torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, "results/celeba_sample.png")
+    torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, "DELETE/celeba/celeba_sample.png")
