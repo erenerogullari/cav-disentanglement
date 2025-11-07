@@ -29,6 +29,6 @@ localization:
   layer: ${cav.layer}
   cav_mode: ${cav.cav_mode}
   random_seed: ${train.random_seed}
-  n_samples_each: 10
+  n_samples_each: 20
   concept_ids: ${dataset.localization.concept_ids}
   concept_pair_ids: ${dataset.localization.concept_pair_ids}
