@@ -1,7 +1,7 @@
 defaults:
   - hardware@train: workstation
   - dataset: elements
-  - model: lenet5
+  - model: resnet18
   - _self_
 
 experiment:
@@ -9,8 +9,9 @@ experiment:
 
 train:
   num_epochs: 500
-  learning_rate: 1.0e-4
-  weight_decay: 1.0e-6
+  learning_rate: 1.0e-3
+  momentum: 0.9
+  weight_decay: 1.0e-4
   val_split: 0.1
   test_split: 0.1
   random_seed: 42

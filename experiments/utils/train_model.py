@@ -309,7 +309,7 @@ def run(cfg: DictConfig) -> None:
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     else:
         criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
+    optimizer = optim.SGD(model.parameters(), lr=cfg.train.learning_rate, momentum=cfg.train.momentum ,weight_decay=cfg.train.weight_decay)
 
     best_state = None
     best_metric = 0
@@ -360,9 +360,17 @@ def run(cfg: DictConfig) -> None:
         class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": ap
         for class_idx, ap in pr_results["per_class_ap"].items()     # type: ignore
     }
-    per_class_avg_recall = {
-        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": float(np.mean(curve["recall"]))     # type: ignore
-        for class_idx, curve in pr_results["curves"].items()     # type: ignore
+    test_probs = torch.sigmoid(test_logits)
+    test_preds = (test_probs >= 0.5).int()
+    per_class_recall_scores = recall_score(
+        test_targets.numpy(),
+        test_preds.numpy(),
+        average=None,
+        zero_division=0,
+    )
+    per_class_recall_named = {
+        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": float(per_class_recall_scores[class_idx]) # type: ignore
+        for class_idx in range(len(per_class_recall_scores)) # type: ignore
     }
     log.info("Test macro AP: %.4f", pr_results["macro_ap"])
 
@@ -382,7 +390,7 @@ def run(cfg: DictConfig) -> None:
     log.info("Saved precision-recall curves to %s", pr_plot_path)
 
     plt.figure()
-    recalls = [per_class_avg_recall[name] for name in per_class_ap_named]
+    recalls = [per_class_recall_named[name] for name in per_class_ap_named]
     aps = [per_class_ap_named[name] for name in per_class_ap_named]
     plt.scatter(recalls, aps, s=20)
     plt.xlabel("Average Recall")
