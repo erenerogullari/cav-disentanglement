@@ -12,7 +12,14 @@ import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-from sklearn.metrics import f1_score, recall_score, accuracy_score, precision_recall_curve, average_precision_score
+from sklearn.metrics import (
+    f1_score,
+    recall_score,
+    accuracy_score,
+    precision_score,
+    precision_recall_curve,
+    average_precision_score,
+)
 import matplotlib.pyplot as plt
 
 from datasets import get_dataset
@@ -135,6 +142,79 @@ def _precision_recall_analysis(
         "per_class_ap": per_class_ap,
         "macro_ap": macro_ap,
     }
+
+
+def _fixed_threshold_per_class_metrics(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    class_names,
+    threshold: float = 0.5,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    logits_cpu = logits.detach().cpu()
+    targets_cpu = targets.detach().cpu()
+    probs = torch.sigmoid(logits_cpu)
+    preds = (probs >= threshold).int()
+    y_true = targets_cpu.numpy()
+    y_pred = preds.numpy()
+    per_class_recall_scores = recall_score(y_true, y_pred, average=None, zero_division=0)
+    per_class_precision_scores = precision_score(y_true, y_pred, average=None, zero_division=0)
+
+    def _name_for_class(idx: int) -> str:
+        return class_names[idx] if idx < len(class_names) else f"class_{idx}"
+
+    per_class_recall_named = {
+        _name_for_class(idx): float(per_class_recall_scores[idx])   # type: ignore
+        for idx in range(len(per_class_recall_scores))  # type: ignore
+    }
+    per_class_precision_named = {
+        _name_for_class(idx): float(per_class_precision_scores[idx])    # type: ignore
+        for idx in range(len(per_class_precision_scores))   # type: ignore
+    }
+    return per_class_recall_named, per_class_precision_named
+
+
+def _plot_precision_recall_curves(pr_results, media_dir: Path, model_name: str, dataset_name: str) -> Path:
+    plt.figure()
+    for class_idx, curve in pr_results["curves"].items():   # type: ignore
+        plt.plot(curve["recall"], curve["precision"])
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curves (Test)")
+    plt.tight_layout()
+    pr_plot_path = media_dir / f"precision_recall_{model_name}_{dataset_name}.pdf"
+    plt.savefig(pr_plot_path, format="pdf")
+    plt.close()
+    return pr_plot_path
+
+
+def _plot_per_class_precision_recall_scatter(
+    per_class_recall_named: Dict[str, float],
+    per_class_precision_named: Dict[str, float],
+    pr_results,
+    class_names,
+    media_dir: Path,
+    model_name: str,
+    dataset_name: str,
+) -> Path:
+    plt.figure()
+    ordered_classes = [
+        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}"
+        for class_idx in pr_results["per_class_ap"].keys()     # type: ignore
+    ]
+    recalls = [per_class_recall_named[name] for name in ordered_classes if name in per_class_recall_named]
+    precisions = [per_class_precision_named[name] for name in ordered_classes if name in per_class_precision_named]
+    plt.scatter(recalls, precisions, s=20)
+    plt.xlabel("Recall (threshold=0.5)")
+    plt.ylabel("Precision (threshold=0.5)")
+    plt.title("Per-class Precision vs. Recall (Test)")
+    plt.xlim(0.0, 1.0)
+    plt.ylim(0.0, 1.0)
+    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
+    plt.tight_layout()
+    ap_scatter_path = media_dir / f"precision_recall_ap_scatter_{model_name}_{dataset_name}.pdf"
+    plt.savefig(ap_scatter_path, format="pdf")
+    plt.close()
+    return ap_scatter_path
 
 
 def _train_epoch(
@@ -356,54 +436,30 @@ def run(cfg: DictConfig) -> None:
     )
 
     pr_results = _precision_recall_analysis(test_logits, test_targets)
-    per_class_ap_named = {
-        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": ap
-        for class_idx, ap in pr_results["per_class_ap"].items()     # type: ignore
-    }
-    test_probs = torch.sigmoid(test_logits)
-    test_preds = (test_probs >= 0.5).int()
-    per_class_recall_scores = recall_score(
-        test_targets.numpy(),
-        test_preds.numpy(),
-        average=None,
-        zero_division=0,
+    per_class_recall_named, per_class_precision_named = _fixed_threshold_per_class_metrics(
+        test_logits,
+        test_targets,
+        class_names,
+        threshold=0.5,
     )
-    per_class_recall_named = {
-        class_names[class_idx] if class_idx < len(class_names) else f"class_{class_idx}": float(per_class_recall_scores[class_idx]) # type: ignore
-        for class_idx in range(len(per_class_recall_scores)) # type: ignore
-    }
     log.info("Test macro AP: %.4f", pr_results["macro_ap"])
 
     media_dir = Path(get_original_cwd()) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     plt.switch_backend("Agg")
-    plt.figure()
-    for class_idx, curve in pr_results["curves"].items():   # type: ignore
-        plt.plot(curve["recall"], curve["precision"])
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title("Precision-Recall Curves (Test)")
-    plt.tight_layout()
-    pr_plot_path = media_dir / f"precision_recall_{cfg.model.name}_{cfg.dataset.name}.pdf"
-    plt.savefig(pr_plot_path, format="pdf")
-    plt.close()
+    pr_plot_path = _plot_precision_recall_curves(pr_results, media_dir, cfg.model.name, cfg.dataset.name)
     log.info("Saved precision-recall curves to %s", pr_plot_path)
 
-    plt.figure()
-    recalls = [per_class_recall_named[name] for name in per_class_ap_named]
-    aps = [per_class_ap_named[name] for name in per_class_ap_named]
-    plt.scatter(recalls, aps, s=20)
-    plt.xlabel("Average Recall")
-    plt.ylabel("Average Precision")
-    plt.title("Per-class AP vs. Average Recall (Test)")
-    plt.xlim(0.0, 1.0)
-    plt.ylim(0.0, 1.0)
-    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
-    plt.tight_layout()
-    ap_scatter_path = media_dir / f"precision_recall_ap_scatter_{cfg.model.name}_{cfg.dataset.name}.pdf"
-    plt.savefig(ap_scatter_path, format="pdf")
-    plt.close()
-    log.info("Saved per-class AP scatter plot to %s", ap_scatter_path)
+    ap_scatter_path = _plot_per_class_precision_recall_scatter(
+        per_class_recall_named,
+        per_class_precision_named,
+        pr_results,
+        class_names,
+        media_dir,
+        cfg.model.name,
+        cfg.dataset.name,
+    )
+    log.info("Saved per-class precision/recall scatter plot to %s", ap_scatter_path)
 
     checkpoint_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
