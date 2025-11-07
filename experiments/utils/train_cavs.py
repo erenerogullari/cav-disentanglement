@@ -198,6 +198,12 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
             tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
             tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}") # type: ignore
 
+    log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
+    if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
+        log.info(f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}")
+    else:
+        log.info("No early exit criterion specified, using final epoch CAVs.")
+        best_cavs = copy.deepcopy(cav_model).to("cpu")
 
     # Save the results
     log.info(f"Training completed. Saving results to {save_dir}.")
