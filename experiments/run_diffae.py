@@ -4,9 +4,10 @@ import torch
 import logging
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from experiments.diffae import run_encode, run_move_encs, train_dir_model, run_decode
+from experiments.diffae import run_encode, run_move_encs, run_decode, get_dir_models
 
 log = logging.getLogger(__name__)
+
 
 @hydra.main(version_base=None, config_path="../configs", config_name="run_diffae")
 def run(cfg: DictConfig) -> None:
@@ -22,8 +23,8 @@ def run(cfg: DictConfig) -> None:
     log.info("1. Encoding activations:")
     encodings, labels = run_encode(cfg)
 
-    log.info("2. Training direction model:")
-    dir_models = train_dir_model(cfg, encodings, labels)
+    log.info("2. Training direction models:")
+    dir_models = get_dir_models(cfg, encodings, labels)
 
     log.info("3. Moving encodings to desired label:")
     moved_encodings, moved_idxs = run_move_encs(cfg, encodings, labels, dir_models)

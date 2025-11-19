@@ -28,7 +28,6 @@ def seed_everything(seed: Optional[int]) -> None:
 
 def get_target_encodings(move_cfg: DictConfig, dataset: Dataset, labels: torch.Tensor, target_label: int, target_concept: str):
     concept_names = dataset.get_concept_names() # type: ignore
-    max_images = getattr(move_cfg, "num_images", None)
     if target_concept not in concept_names:
         raise ValueError(f"Concept '{target_concept}' not found in dataset concepts: {concept_names}")
     
@@ -38,10 +37,6 @@ def get_target_encodings(move_cfg: DictConfig, dataset: Dataset, labels: torch.T
 
     if idx_to_move.size(0) == 0:
         raise RuntimeError(f"No samples found for concept '{target_concept}' with label '{select_label}'.")
-    elif max_images is not None and idx_to_move.size(0) > int(max_images):
-        max_images = int(max_images)
-        perm = torch.randperm(idx_to_move.size(0))[:max_images]
-        idx_to_move = idx_to_move[perm]
 
     return idx_to_move, concept_idx
 
@@ -82,10 +77,10 @@ def move_encs(move_cfg, data, w_dir, b_dir, median_logit, mean_length=None, step
         w_dir = F.normalize(w_dir, dim = 0).unsqueeze(0).repeat(data.shape[0], 1)
         return data + signs * step_size * data.shape[1] ** (1 / 2) * w_dir
     
-    elif move_cfg.move_method == "signal":
+    elif move_cfg.move_method == "clarc":
 
         if step_size is None:
-            raise ValueError("step_size must be provided when using 'signal' move_method.")
+            raise ValueError("step_size must be provided when using 'clarc' move_method.")
 
         outs = data + 0
         is_2dim = data.dim() == 2
@@ -100,9 +95,6 @@ def move_encs(move_cfg, data, w_dir, b_dir, median_logit, mean_length=None, step
         acts = outs + addition * step_size
         acts = acts.squeeze(-1).squeeze(-1) if is_2dim else acts
         return acts
-    
-    elif move_cfg.move_method == "no_move":
-        return data
     
     else:
         raise ValueError(f"Unknown move method: {move_cfg.move_method}")
@@ -129,10 +121,22 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
         target_label=move_cfg.target_label,
         target_concept=move_cfg.target_concept,
     )
-    encs_to_move = encodings[idx_to_move].to(device)
+    
     encs_to_keep = encodings[~torch.isin(torch.arange(encodings.shape[0]), idx_to_move)].to(device)
-    log.info("Found %s samples to move.", encs_to_move.size(0))
-
+    log.info("Found %s samples with concept label %s for concept %s to move.", 
+             len(idx_to_move), 
+             1 - move_cfg.target_label,
+             move_cfg.target_concept,
+             )
+    
+    # max_images = getattr(move_cfg, "num_images", None)
+    # if max_images is not None and idx_to_move.size(0) > int(max_images):
+    #     max_images = int(max_images)
+    #     perm = torch.randperm(idx_to_move.size(0))[:max_images]
+    #     idx_to_move = idx_to_move[perm]
+    # elif max_images is not None and idx_to_move.size(0) <= int(max_images):
+    #     raise ValueError(f"Not enough samples to move for num_images={max_images}")
+    encs_to_move = encodings[idx_to_move].to(device)
 
     means, stds = compute_stats(encodings.to(device))
     step_sizes = getattr(move_cfg, "step_sizes", None)
@@ -150,32 +154,32 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
             dir_model.eval()
             dir_model.requires_grad_(False)
 
-            encs_to_keep_norm = normalize(move_cfg, dir_model, encs_to_keep, means, stds)
-            encs_to_move_norm = normalize(move_cfg, dir_model, encs_to_move, means, stds)
+            encs_to_keep = normalize(move_cfg, dir_model, encs_to_keep, means, stds)
 
             w_dir, b_dir = dir_model.get_direction(concept_idx)    # type: ignore
             w_dir = w_dir.to(device)
             b_dir = b_dir.to(device)
 
-            if move_cfg.move_method == "signal":
-                w_dir_for_move = F.normalize(w_dir, dim=0)
-                mean_length = (encs_to_keep_norm.flatten(start_dim=1) * w_dir_for_move).sum(1).mean(0)
+            if move_cfg.move_method == "clarc":
+                w_dir = F.normalize(w_dir, dim=0)
+                mean_length = (encs_to_keep.flatten(start_dim=1) * w_dir).sum(1).mean(0)
                 median_logit = None
             else:
-                w_dir_for_move = w_dir
                 mean_length = None
-                logits = dir_model(encs_to_keep_norm)[:, concept_idx]
+                logits = dir_model(encs_to_keep)[:, concept_idx]
                 median_logit = logits.median()
 
             dir_step_results: Dict[Optional[float], torch.Tensor] = {}
             for step_size in step_sizes:
-                if move_cfg.move_method in {"constant", "signal"} and step_size is None:
+                if move_cfg.move_method in ["constant", "clarc"] and step_size is None:
                     raise ValueError(f"'step_sizes' must be provided for move_method '{move_cfg.move_method}'.")
-
+                
+                log.info("Moving encodings for step size=%s", step_size)
+                encs_to_move = normalize(move_cfg, dir_model, encs_to_move, means, stds)
                 moved_norm = move_encs(
                     move_cfg,
-                    encs_to_move_norm,
-                    w_dir_for_move,
+                    encs_to_move,
+                    w_dir,
                     b_dir,
                     median_logit,
                     mean_length,
