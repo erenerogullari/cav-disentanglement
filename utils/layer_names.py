@@ -1,3 +1,8 @@
+from torchvision.models import ResNet, EfficientNet, VGG, VisionTransformer
+from timm.models.resnet import ResNet as ResNetTimm
+from timm.models.rexnet import RexNet
+from timm.models.vision_transformer import VisionTransformer as VisionTransformerTimm
+
 LAYER_NAMES_BY_MODEL = {
     'lenet_cmnist': [
         "input_identity", 
@@ -132,3 +137,124 @@ LAYER_NAMES_BY_MODEL = {
             "inspection_layer"
         ]
 }
+
+
+def get_lnames_sorted_resnet(model):
+    lnames = [n for n, _ in model.named_modules()]
+    lnames_sorted = ["input_identity"]
+    idx = 0
+    while "layer" not in lnames[idx]:
+        lnames_sorted.append(lnames[idx])
+        idx += 1
+
+    for lidx in range(4):
+        while f"layer{lidx+1}" in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+            idx += 1
+        name_identity = "last_conv" if lidx == 3 else f"identity_{lidx}"
+        name_relu = "last_relu" if lidx == 3 else f"relu_{lidx}"
+        lnames_sorted += [name_identity, name_relu]
+
+    while idx < len(lnames):
+        if "identity" not in lnames[idx] and "last_" not in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+        idx += 1
+    return lnames_sorted
+
+def get_lnames_sorted_rexnet(model):
+    lnames = [n for n, _ in model.named_modules()]
+    lnames_sorted = ["input_identity"]
+    idx = 0
+    while "features." not in lnames[idx]:
+        lnames_sorted.append(lnames[idx])
+        idx += 1
+    lnames_sorted.append("stem_identity")
+    for lidx in range(17):
+        while f"features.{lidx}" in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+            idx += 1
+        name_identity = "last_conv" if lidx == 16 else f"identity_{lidx}"
+        name_relu = "last_relu" if lidx == 16 else f"relu_{lidx}"
+        lnames_sorted += [name_identity, name_relu]
+
+    while idx < len(lnames):
+        if "identity" not in lnames[idx] and "last_" not in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+        idx += 1
+    return lnames_sorted
+
+def get_lnames_sorted_efficientnet(model):
+    lnames = [n for n, _ in model.named_modules()]
+    lnames_sorted = ["input_identity"]
+    idx = 0
+    num_blocks = max([int(n.split(".")[1]) for n in lnames if "features." in n])
+
+    while not "features.0" in lnames[idx]:
+        lnames_sorted.append(lnames[idx])
+        idx += 1
+
+    for lidx in range(num_blocks + 1):
+        while f"features.{lidx}" in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+            idx += 1
+        name_identity = "last_conv" if lidx == num_blocks else f"identity_{lidx}"
+        name_relu = "last_relu" if lidx == num_blocks else f"relu_{lidx}"
+        lnames_sorted += [name_identity, name_relu]
+
+    while idx < len(lnames):
+        if "identity" not in lnames[idx] and "last_" not in lnames[idx] and "stem" not in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+        idx += 1
+        
+    return lnames_sorted
+
+def get_lnames_sorted_vgg(model):
+    return ["input_identity"] + [n for n, _ in model.named_modules()][:-1]
+
+def get_lnames_sorted_vit(model):
+    return [n for n, _ in model.named_modules()][:-3] + ["inspection_layer"] + [n for n, _ in model.named_modules()][-3:-1]
+
+def get_lnames_sorted_vit_timm(model):
+    lnames = [n for n, _ in model.named_modules()]
+    lnames_sorted = []
+    idx = 0
+    while "blocks." not in lnames[idx]:
+        lnames_sorted.append(lnames[idx])
+        idx += 1
+
+    for lidx in range(12):
+        while f"blocks.{lidx}" in lnames[idx]:
+            lnames_sorted.append(lnames[idx])
+            idx += 1
+        name_identity = f"identity_{lidx}"
+        name_relu = f"relu_{lidx}"
+        lnames_sorted += [name_identity, name_relu]
+
+    while idx < len(lnames):
+        if lnames[idx] == "head":
+            lnames_sorted.append("inspection_layer")
+        if not any([l in lnames[idx] for l in ["identity", "inspection"]]):
+            lnames_sorted.append(lnames[idx])
+        idx += 1
+    return lnames_sorted
+
+def get_lnames_sorted_ecg_resnet(model):
+    return [n for n, _ in model.named_modules()]
+
+def get_lnames_sorted(model):
+    if isinstance(model, ResNet):
+        return get_lnames_sorted_resnet(model)
+    elif isinstance(model, ResNetTimm):
+        return get_lnames_sorted_resnet(model)
+    elif isinstance(model, RexNet):
+        return get_lnames_sorted_rexnet(model)
+    elif isinstance(model, EfficientNet):
+        return get_lnames_sorted_efficientnet(model)
+    elif isinstance(model, VGG):
+        return get_lnames_sorted_vgg(model)
+    elif isinstance(model, VisionTransformer):
+        return get_lnames_sorted_vit(model)
+    elif isinstance(model, VisionTransformerTimm):
+        return get_lnames_sorted_vit_timm(model)
+    else:
+        raise NotImplementedError(f"not implemented for model {model.__class__}")

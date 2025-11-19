@@ -6,7 +6,7 @@ defaults:
   - cav_model@dir_model: pattern_cav
 
 experiment:
-  run_id: diffae_celeba
+  name: diffae
   seed: 42
   format: png
 

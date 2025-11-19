@@ -29,17 +29,19 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     return checkpoint_path
 
 
-def train_test_split(x_latent, labels, train_ratio):
-    total_size = x_latent.shape[0]
-    train_size = int(total_size * train_ratio)
-    indices = torch.randperm(total_size)
-    train_indices = indices[:train_size]
-    test_indices = indices[train_size:]
-    train_data = x_latent[train_indices]
-    train_labels = labels[train_indices]
-    test_data = x_latent[test_indices]
-    test_labels = labels[test_indices]
-    return train_data, train_labels, test_data, test_labels
+def train_test_split(cfg, dataset, x_latent, labels):
+    idxs_train, idxs_val, idxs_test = dataset.do_train_val_test_split(
+        val_split=cfg.train.val_ratio,
+        test_split=cfg.train.test_ratio,
+        seed=cfg.train.random_seed
+    )
+    train_data = x_latent[idxs_train]
+    train_labels = labels[idxs_train]
+    val_data = x_latent[idxs_val]
+    val_labels = labels[idxs_val]
+    test_data = x_latent[idxs_test]
+    test_labels = labels[idxs_test]
+    return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 def train_epoch(dataloader, cav_model, weights, optimizer, device):
     
@@ -105,10 +107,13 @@ def eval_epoch(test_data, test_labels, cav_model, device):
     
     return metrics
 
-def train_cavs(cfg: DictConfig) -> nn.Module:
+def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: torch.Tensor | None = None, save_dir: Path | None = None) -> nn.Module:
     """Train CAVs with disentanglement losses.
     Args:
         cfg (DictConfig): Configuration object.
+        encodings (torch.Tensor | None): Precomputed latent encodings. If None, latents will be extracted.
+        labels (torch.Tensor | None): Corresponding labels for the encodings. If None, labels will be extracted.
+        save_dir (Path | None): Directory to save results. If None, a default path will be used.
     Returns:
         cav_model (nn.Module): Trained CAV model.
     """
@@ -116,29 +121,34 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
     device = cfg.train.device
     log.info(f"Using device: {device}")
     torch.manual_seed(cfg.train.random_seed)
-    model_name = name_experiment(cfg)
-    original_cwd = hydra.utils.get_original_cwd()
-    save_dir = os.path.join(original_cwd, "results", "disentangle_cavs", model_name)
-    os.makedirs(os.path.join(save_dir, 'metrics'), exist_ok=True)
-    os.makedirs(os.path.join(save_dir, 'media'), exist_ok=True)
-
-    # Load model, dataset and compute latents
-    log.info(f"Loading model: {cfg.model.name}")
-    ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-    model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
-                                                pretrained=cfg.model.pretrained,
-                                                n_class=cfg.model.n_class).to(device)
+    if save_dir is None:
+        model_name = name_experiment(cfg)
+        save_dir = Path(get_original_cwd()) / "results" / cfg.experiment.name / model_name
+    (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
+    (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
     dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
                                         normalize_data=cfg.dataset.normalize_data,
-                                        image_size=cfg.dataset.img_size)
+                                        image_size=cfg.dataset.image_size)
     concept_names = dataset.get_concept_names()
 
-    log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
-    x_latent, labels = extract_latents(cfg, model, dataset)
+    if encodings is not None and labels is not None:
+        log.info("Using provided encodings and labels for CAV training.")
+        x_latent = encodings
+        labels = labels
+    else:
+        log.info("No encodings provided. Extracting latents from model and dataset.")
+        log.info(f"Loading model: {cfg.model.name}")
+        ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
+        model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
+                                                    pretrained=cfg.model.pretrained,
+                                                    n_class=cfg.model.n_class).to(device)
+        log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
+        x_latent, labels = extract_latents(cfg, model, dataset)
+
     n_concepts, n_features = labels.shape[1], x_latent.shape[1]
-    train_latents, train_labels, test_latents, test_labels = train_test_split(x_latent, labels, cfg.train.train_ratio)
+    train_latents, train_labels, val_latents, val_labels, test_latents, test_labels = train_test_split(cfg, dataset, x_latent, labels)
     train_dataset = TensorDataset(train_latents, train_labels)
     train_loader = DataLoader(train_dataset, batch_size=cfg.train.batch_size, shuffle=True, num_workers=cfg.train.num_workers)
 
@@ -148,6 +158,13 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
     cav_cfg = {"_target_": raw_cav_cfg["_target_"]} # type: ignore
     cavs_original, bias_original = compute_cavs(train_latents, train_labels, type=cfg.cav.name, normalize=True)
     cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device=device)
+
+    # Check if CAVs are already trained
+    if (save_dir / "state_dict.pth").exists():
+        log.info(f"CAVs already trained and saved at {save_dir}. Loading existing model.")
+        cav_model.load_state_dict(torch.load(save_dir / "state_dict.pth"))
+        return cav_model
+
     if cfg.cav.optimal_init:
         cav_model.load_state_dict({'weights': cavs_original, 'bias': bias_original})
     cav_model = cav_model.to(device)
@@ -175,7 +192,7 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
     for epoch in tqdm(range(cfg.train.num_epochs+1), desc="Epochs"):
         # Evaluation every 10 epochs
         if epoch % 10 == 0:
-            metrics = eval_epoch(test_latents, test_labels, cav_model, device)
+            metrics = eval_epoch(val_latents, val_labels, cav_model, device)
             auc_scores_history.append(metrics['auc_scores'])
             uniqueness_history.append(metrics['uniqueness'])
             avg_precision_hist.append(metrics['avg_precision'])
@@ -198,6 +215,12 @@ def train_cavs(cfg: DictConfig) -> nn.Module:
             tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
             tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}") # type: ignore
 
+    log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
+    if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
+        log.info(f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}")
+    else:
+        log.info("No early exit criterion specified, using final epoch CAVs.")
+        best_cavs = copy.deepcopy(cav_model).to("cpu")
 
     # Save the results
     log.info(f"Training completed. Saving results to {save_dir}.")
