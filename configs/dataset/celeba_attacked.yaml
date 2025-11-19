@@ -1,0 +1,6 @@
+_target_: datasets.get_celeba_attacked_dataset
+data_paths: ["/Users/erogullari/datasets/"]
+normalize_data: True
+shuffle: True
+image_size: 224
+name: celeba_attacked

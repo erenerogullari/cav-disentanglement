@@ -10,6 +10,8 @@ class BaseDataset(Dataset):
         self.transform = transform
         self.augmentation = augmentation
         self.do_augmentation = False
+        self.classes = None
+        self.sample_ids_by_artifact = {}
 
         self.mean = torch.Tensor((0.5, 0.5, 0.5))
         self.var = torch.Tensor((0.5, 0.5, 0.5))
@@ -20,8 +22,8 @@ class BaseDataset(Dataset):
         else:
             self.ids_by_artifact = None
 
-    def do_train_val_test_split(self, val_split=.1, test_split=.1):
-        rng = np.random.default_rng(0)
+    def do_train_val_test_split(self, val_split=.1, test_split=.1, seed=0):
+        rng = np.random.default_rng(seed=seed)
         idxs_all = np.arange(len(self))
         idxs_val = np.array(sorted(rng.choice(idxs_all, size=int(np.round(len(idxs_all) * val_split)), replace=False)))
         idxs_left = np.array(list(set(idxs_all) - set(idxs_val)))
@@ -53,6 +55,9 @@ class BaseDataset(Dataset):
         raise NotImplementedError()
     
     def get_class_names(self):
+        raise NotImplementedError()
+    
+    def get_subset_by_idxs(self, idxs):
         raise NotImplementedError()
     
     def get_class_id_by_name(self, class_name):
