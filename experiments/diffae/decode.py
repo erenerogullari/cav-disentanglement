@@ -87,14 +87,20 @@ def run_decode(config: DictConfig, moved_encodings: Dict[float, Dict[Optional[fl
     device = torch.device(experiment_cfg.device)
     log.info("Using device %s", device)
 
+    move_cfg = config.move_encs
+    max_images = getattr(move_cfg, "num_images", None)
+    if max_images is not None and moved_idxs.size(0) > int(max_images):
+        max_images = int(max_images)
+        perm = torch.randperm(moved_idxs.size(0))[:max_images]
+        moved_idxs = moved_idxs[perm]
+    elif max_images is not None and moved_idxs.size(0) <= int(max_images):
+        raise ValueError(f"Not enough samples to move for num_images={max_images}")
+
     model = build_model(config, device)
     dataset = instantiate(config.dataset).get_subset_by_idxs(moved_idxs.tolist())  # type: ignore
 
-    dir_model_cfg = getattr(config, "dir_model", {})
-    dir_model_name = getattr(dir_model_cfg, "name", "direction_model")
     image_format = getattr(experiment_cfg, "format", "png")
-
-    output_root = Path("results") / "diffae" / "decodings" / dir_model_name
+    output_root = Path("results") / "diffae" / "decodings" / config.dir_model.name
     output_root.mkdir(parents=True, exist_ok=True)
 
     moved_indices = moved_idxs.long().tolist()
@@ -109,6 +115,8 @@ def run_decode(config: DictConfig, moved_encodings: Dict[float, Dict[Optional[fl
         log.info("Decoding encodings for alpha=%s", alpha)
 
         for step_size, encs in sorted(step_dict.items(), key=lambda item: item[0]): # type: ignore
+            log.info("Decoding encodings for step size=%s", step_size)
+            encs = encs[moved_idxs].to(device)
             dataloader = DataLoader(
                 TensorDataset(
                     torch.stack([sample for sample, _ in dataset]),

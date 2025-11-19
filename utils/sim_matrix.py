@@ -34,8 +34,9 @@ def reorder_similarity_matrix(S, method='average'):
     D = 1 - S
     np.fill_diagonal(D, 0)
 
-    # Clip negative distances to zero
+    # Clip negative distances to zero and ensure symmetry via averaging with transpose
     D = np.clip(D, a_min=0, a_max=None)
+    D = 0.5 * (D + D.T) 
 
     # Perform hierarchical clustering
     linkage_matrix = linkage(squareform(D), method=method)

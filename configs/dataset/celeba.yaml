@@ -1,5 +1,6 @@
 _target_: datasets.get_celeba_dataset
-data_paths: ["/Users/erogullari/datasets/"]
+# data_paths: ["/Users/erogullari/datasets/"]
+data_paths: ["/home/erogullari/datasets"]
 normalize_data: True
 shuffle: True
 image_size: 224
