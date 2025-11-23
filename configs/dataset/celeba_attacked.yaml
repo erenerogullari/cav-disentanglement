@@ -3,4 +3,10 @@ data_paths: ["/Users/erogullari/datasets/"]
 normalize_data: True
 shuffle: True
 image_size: 224
+attacked_classes:
+  - 1 
+artifact: artificial
+artifact_type: ch_time
+p_artifact: 0.4
+entanglement_factor: 5
 name: celeba_attacked

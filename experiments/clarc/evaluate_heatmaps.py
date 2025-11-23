@@ -1,141 +1,159 @@
-import torch
 import logging
-import os
-import numpy as np
-import tqdm
-from argparse import ArgumentParser
-from datasets import load_dataset
-from models import get_fn_model_loader
-from utils.helper import get_device, load_config
+import pickle
+from pathlib import Path
+from typing import Dict
+
 import matplotlib.pyplot as plt
-from utils.localization import get_localizations
-from torch.utils.data import DataLoader
-from crp.attribution import CondAttribution
-from models import  get_canonizer
-from zennit.composites import EpsilonPlusFlat
-from sklearn.metrics import jaccard_score
-from utils.localization import binarize_heatmaps
-import seaborn as sns
+import numpy as np
 import pandas as pd
+import seaborn as sns
+import torch
+import tqdm
+from hydra.utils import instantiate
+from omegaconf import DictConfig
+from torch import nn
+from torch.utils.data import DataLoader
+
+from crp.attribution import CondAttribution
 from crp.image import imgify
+from models import get_canonizer
+from sklearn.metrics import jaccard_score
+from zennit.composites import EpsilonPlusFlat
+
+from experiments.clarc.utils import first_config_value, get_model_name, load_base_model
+from experiments.utils.activations import extract_latents
+from experiments.utils.utils import name_experiment
+from utils.cav import compute_cavs
+from utils.localization import get_localizations, binarize_heatmaps
+
+log = logging.getLogger(__name__)
 
 
-# TODO: Inegrate this into repo
+def _compute_baseline_cavs(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> torch.Tensor:
+    latents, targets = extract_latents(cfg, model, dataset)
+    cavs, _ = compute_cavs(latents, targets, type=cfg.cav.name, normalize=True)
+    return cavs
 
 
+def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
+    artifact_keys = first_config_value(
+        cfg, ["correction.heatmap_artifacts", "heatmap_artifacts"], default=["timestamp", "box"]
+    )
+    if not isinstance(artifact_keys, list) or len(artifact_keys) == 0:
+        artifact_keys = ["timestamp", "box"]
+    mapping = getattr(dataset, "sample_ids_by_artifact", {}) or {}
+    selected_ids = None
+    for key in artifact_keys:
+        ids = mapping.get(key)
+        if ids is None:
+            continue
+        ids_np = np.array(ids)
+        selected_ids = ids_np if selected_ids is None else np.intersect1d(selected_ids, ids_np)
+    if selected_ids is None:
+        selected_ids = np.arange(len(dataset))
+    idxs_test = getattr(dataset, "idxs_test", None)
+    if idxs_test is not None:
+        selected_ids = np.intersect1d(selected_ids, np.array(idxs_test))
+    return selected_ids
 
-def get_args():
-    parser = ArgumentParser()
-    parser.add_argument('--config_file', 
-                        # default="config_files/training/celeba_attacked/local/vgg16_p_artifact0.3_factor100_sgd_lr0.001.yaml")
-                        default="config_files/cav_disentanglement/celeba_attacked/local/vgg16_p_artifact0.4_factor5_optimsgd0.001_alpha1_beta100_lr0.0001.yaml")
-    parser.add_argument('--plot_to_wandb', default=True, type=bool)
-    parser.add_argument('--after_disentanglement', default=True, type=bool)
-    parser.add_argument('--cav_type', default="best", type=str)
-    args = parser.parse_args()
-    return args
 
-def main():
-    args = get_args()
-    config = load_config(args.config_file)
-    plot_concept_heatmaps(config, args.plot_to_wandb, after_disentanglement=args.after_disentanglement, cav_type=args.cav_type)
+def evaluate_concept_heatmaps(
+    cfg: DictConfig,
+    cav_model: nn.Module,
+    num_imgs: int = 16,
+    cav_type: str = "best",
+) -> None:
+    device = torch.device(cfg.experiment.device)
+    dataset = instantiate(cfg.dataset)
+    classification_model = load_base_model(cfg, dataset, device)
+    cavs_baseline = _compute_baseline_cavs(cfg, classification_model, dataset)
+    cavs_orthogonal, _ = cav_model.get_params()
+    cav_sets = {
+        "Baseline": cavs_baseline,
+        "Orthogonal": cavs_orthogonal.cpu(),
+    }
+    concept_names = dataset.get_concept_names()
+    concepts_to_plot = first_config_value(
+        cfg, ["correction.heatmap_concepts", "heatmap_concepts"], default=["box", "timestamp", "Blond_Hair"]
+    )
+    available_concepts = {
+        cname: concept_names.index(cname)
+        for cname in concepts_to_plot
+        if cname in concept_names
+    }
+    if not available_concepts:
+        log.warning("None of the requested concepts (%s) exist in the dataset.", concepts_to_plot)
+        return
 
-
-def plot_concept_heatmaps(config, plot_to_wandb, num_imgs=16, after_disentanglement=True, cav_type="best"):
-    device = get_device()
-    wandb_project_name = config.get('wandb_project_name', None)
-    wandb_api_key = config.get('wandb_api_key', None)
-
-    do_wandb_logging = wandb_project_name is not None
-    # Initialize WandB
-    if do_wandb_logging:
-        assert wandb_api_key is not None, f"'wandb_api_key' required if 'wandb_project_name' is provided ({wandb_project_name})"
-        os.environ["WANDB_API_KEY"] = wandb_api_key
-        wandb.init(id=config['wandb_id'], project=wandb_project_name, 
-                   config=config, resume=True)
-        wandb.run.name = f"{config['config_name']}-{wandb.run.name}"
-        logger.info(f"Initialized wand. Logging to {wandb_project_name} / {wandb.run.name}...")
-
-    dataset = load_dataset(config, normalize_data=True, hm=True)
-    model = get_fn_model_loader(config["model_name"])(n_class=len(dataset.classes), ckpt_path=config["ckpt_path"], device=device).to(device).eval()
-    
-    if after_disentanglement:
-        model_name = config["model_name"]
-        p_artifact = config["p_artifact"]
-        factor = config["entanglement_factor"]
-        optimizer = config["optimizer"]
-        lr = config["base_lr"]
-        base_path_cavs = f"{config['dir_precomputed_data']}/cavs/{config['dataset_name']}/{model_name}_p_artifact{p_artifact}_factor{factor}_{optimizer}_lr{lr}"
-        path_cavs_baseline = f"{base_path_cavs}/cavs_baseline.pth"
-        path_cavs_orthogonal = f"{base_path_cavs}/cavs_disentangled_{config['config_name']}_{cav_type}.pth"
-        # path_cavs_orthogonal = f"notebooks/data/cavs_disentangled_ab.pt"
-        # path_cavs_orthogonal = f"tmp/cavs.pt"
-        cavs_all = {
-            "Baseline": torch.load(path_cavs_baseline),
-            "Orthogonal": torch.load(path_cavs_orthogonal)
-        }
-    else:
-        base_path_cavs = f"{config['dir_precomputed_data']}/cavs/{config['dataset_name']}/{config['config_name']}"
-        path_cavs_baseline = f"{base_path_cavs}/cavs_baseline.pth"
-        cavs_all = {
-            "Baseline": torch.load(path_cavs_baseline)
-        }
-
-    cnames_all = list(dataset.metadata.columns.values[2:])
-    assert len(cavs_all["Baseline"]) == len(cnames_all), f"mismatch between cav tensor ({cavs.shape}) and concept names {len(cnames_all)}"
-    concepts = ["box", "timestamp", "Blond_Hair"]
-
-    sample_ids = np.intersect1d(np.intersect1d(dataset.art1_ids, 
-                                               dataset.art2_ids), 
-                                dataset.idxs_test)
-    logger.info(f"Found {len(sample_ids)} interesting samples.")
-    ds_art_test = dataset.get_subset_by_idxs(sample_ids)
-
-    attribution = CondAttribution(model)
-    canonizers = get_canonizer(config["model_name"])
+    sample_ids = _select_heatmap_samples(dataset, cfg)
+    if len(sample_ids) == 0:
+        log.warning("No samples matched the requested artifact configuration. Skipping heatmap evaluation.")
+        return
+    ds_subset = dataset.get_subset_by_idxs(sample_ids.tolist())
+    attribution = CondAttribution(classification_model)
+    canonizers = get_canonizer(get_model_name(cfg))
     composite = EpsilonPlusFlat(canonizers)
 
-    cav_localizations = {}
-    for name, cavs in cavs_all.items():
-        cavs_subset = {c: cavs[cnames_all.index(c)] for c in concepts}
-        imgs, localizations, gts = compute_concept_relevances(attribution, ds_art_test, cavs_subset, composite, config, device)
+    results_dir = Path("results") / "clarc" / name_experiment(cfg)
+    media_dir = results_dir / "media"
+    metrics_dir = results_dir / "metrics"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+
+    cav_localizations: Dict[str, Dict[str, torch.Tensor]] = {}
+    imgs = None
+    gts = None
+    for name, cavs in cav_sets.items():
+        cav_subset = {cname: cavs[idx] for cname, idx in available_concepts.items()}
+        imgs, localizations, gts = compute_concept_relevances(
+            attribution,
+            ds_subset,
+            cav_subset,
+            composite,
+            cfg,
+            device,
+            batch_size=cfg.experiment.batch_size,
+        )
         cav_localizations[name] = localizations
 
-    savepath = f"{config['dir_outputs']}/concept_visualizations/{config['config_name']}_{cav_type}"
-    os.makedirs(os.path.dirname(savepath), exist_ok=True)
-    create_plot(dataset, imgs[:min(len(imgs), num_imgs)], cav_localizations, gts["timestamp"], gts["box"], savepath)
+    if imgs is None or gts is None:
+        log.warning("Failed to compute heatmaps due to missing ground-truth annotations.")
+        return
 
-    ## quantify
+    savepath = media_dir / f"concept_heatmaps_{cav_type}"
+    create_plot(dataset, imgs[: min(len(imgs), num_imgs)], cav_localizations, gts["timestamp"], gts["box"], savepath)
+
     results_quant = {}
-    for cav_name, _ in cavs_all.items():
+    for cav_name, locs in cav_localizations.items():
         for cname in ["timestamp", "box"]:
-            loc = cav_localizations[cav_name][cname]
-            concept_rel = ((loc * gts[cname]).sum((1,2)) / (loc.sum((1, 2)) + 1e-10))
-            loc_concept_binary = binarize_heatmaps(loc, thresholding="otsu")
-            jaccards = np.array([jaccard_score(loc_concept_binary[i].reshape(-1).numpy(),  gts[cname][i].reshape(-1).numpy()) for i in range(len(loc_concept_binary))])
-            concept_rels = concept_rel
-            concept_iou = jaccards
-            results_quant[f"iou_{cname}_{cav_name}_{cav_type}"] = concept_iou.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}_{cav_type}"] = concept_rels.mean()
+            if cname not in locs:
+                continue
+            loc = locs[cname]
+            concept_rel = ((loc * gts[cname]).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10))
+            loc_binary = binarize_heatmaps(loc, thresholding="otsu")
+            jaccards = np.array([
+                jaccard_score(loc_binary[i].reshape(-1).numpy(), gts[cname][i].reshape(-1).numpy())
+                for i in range(len(loc_binary))
+            ])
+            results_quant[f"iou_{cname}_{cav_name}_{cav_type}"] = jaccards.mean()
+            results_quant[f"concept_rel_{cname}_{cav_name}_{cav_type}"] = concept_rel.mean().item()
 
     data_plot = pd.DataFrame(data=[
-        ("Baseline", results_quant["concept_rel_timestamp_Baseline_best"].item()),
-        ("Orthogonal", results_quant["concept_rel_timestamp_Orthogonal_best"].item()),
-            ], columns=["CAV", "Concept Relevance"])
-    savepath_quant = f"{config['dir_outputs']}/concept_visualizations/{config['config_name']}_{cav_type}_concept_relevance"
-    vmax = 0.5 if results_quant["concept_rel_timestamp_Orthogonal_best"].item() > 0.44 else 0.45
+        ("Baseline", results_quant.get(f"concept_rel_timestamp_Baseline_{cav_type}", 0.0)),
+        ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal_{cav_type}", 0.0)),
+    ], columns=["CAV", "Concept Relevance"])
+    vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
+    savepath_quant = media_dir / f"concept_relevance_{cav_type}"
     plot_concept_relevance(data_plot, vmax, savepath_quant)
 
-    if plot_to_wandb:
-        str_type = "-".join(list(cav_localizations.keys()))
-        wandb.log({f"concept_heatmaps_{str_type}_{cav_type}": wandb.Image(f"{savepath}.jpg")})
-        wandb.log(results_quant)
+    with open(metrics_dir / f"concept_relevance_{cav_type}.pkl", "wb") as f:
+        pickle.dump(results_quant, f)
 
-def plot_concept_relevance(data_plot, vmax, savename):
+
+def plot_concept_relevance(data_plot: pd.DataFrame, vmax: float, savename: Path) -> None:
     sns.set_style("whitegrid")
     plt.rcParams.update({'font.size': 9, 'legend.fontsize': 9, 'axes.titlesize': 11})
     fig = plt.figure(figsize=(2.5, 3))
-    # sns.barplot(data=data_plot, y="Concept Relevance")
     sns.barplot(x='CAV', y='Concept Relevance', hue="CAV", data=data_plot)
     ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
     if vmax == .5:
@@ -146,99 +164,91 @@ def plot_concept_relevance(data_plot, vmax, savename):
     [fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500) for ending in ["png", "jpg", "pdf"]]
     plt.close()
 
-def compute_concept_relevances(attribution, ds, cavs, composite, config, device, batch_size=8):
+
+def compute_concept_relevances(
+    attribution: CondAttribution,
+    ds,
+    cavs: Dict[str, torch.Tensor],
+    composite,
+    cfg: DictConfig,
+    device: torch.device,
+    batch_size: int = 8,
+):
     localizations = {c: None for c in cavs.keys()}
     gts = {"timestamp": None, "box": None}
+    layer_name = first_config_value(cfg, ["cav.layer", "correction.layer"], default=cfg.cav.layer)
+    hm_config = {"layer_name": layer_name}
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
     imgs = None
-    for i, (x, _, loc1, loc2) in enumerate(tqdm.tqdm(dl)):
+    for x, _, loc_timestamp, loc_box in tqdm.tqdm(dl):
         for cname, cav in cavs.items():
-            attr, loc_cav = get_localizations(x.clone(), cav, attribution, composite, config, device)
+            attr, loc_cav = get_localizations(x.clone(), cav, attribution, composite, hm_config, device)
             loc_cav = attr.heatmap.detach().cpu().clamp(min=0)
-            localizations[cname] = loc_cav if localizations[cname] is None else torch.cat([localizations[cname], loc_cav])
-        gts["timestamp"] = loc1 if gts["timestamp"] is None else torch.cat([gts["timestamp"], loc1])
-        gts["box"] = loc2 if gts["box"] is None else torch.cat([gts["box"], loc2])
+            localizations[cname] = loc_cav if localizations[cname] is None else torch.cat(
+                [localizations[cname], loc_cav]
+            )
+        gts["timestamp"] = loc_timestamp if gts["timestamp"] is None else torch.cat([gts["timestamp"], loc_timestamp])
+        gts["box"] = loc_box if gts["box"] is None else torch.cat([gts["box"], loc_box])
         imgs = x.detach().cpu() if imgs is None else torch.cat([imgs, x.detach().cpu()])
     return imgs, localizations, gts
 
-def create_plot(ds, imgs, cav_localizations, gt_timestamp, gt_box, savepath):
-    num_cavs = len(cav_localizations)
 
+def create_plot(ds, imgs, cav_localizations, gt_timestamp, gt_box, savepath: Path) -> None:
+    num_cavs = len(cav_localizations)
     nrows = len(imgs)
     ncols = 3 + 3 * num_cavs
     size = 1.7
     level = 2.0
-    fig, axs = plt.subplots(nrows, ncols, figsize=(ncols*size, nrows*size))
-    
+    fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * size, nrows * size))
+
     for i in range(nrows):
-        
-        # input
         ax = axs[i][0]
         ax.imshow(ds.reverse_normalization(imgs[i]).permute((1, 2, 0)).int().numpy())
         axs[0][0].set_title("Input")
 
-        all_maxs = [loc[i].max() for _, loc in cav_localizations["Baseline"].items()]
-
         for cav_idx, (cav_name, localizations) in enumerate(cav_localizations.items()):
-
-        # hm timestamp
             cname = "timestamp"
-            # all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
-            all_maxs = [all_concept_hms[cname][i].max() for n, all_concept_hms in cav_localizations.items() if n == cav_name]
+            all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
             normalization_constant = torch.max(torch.tensor(all_maxs))
             c = 1 + cav_idx
             ax = axs[i][c]
-            img_hm = imgify(localizations[cname][i] / normalization_constant, 
-                            cmap="bwr", vmin=-1, vmax=1, level=level)
+            img_hm = imgify(localizations[cname][i] / normalization_constant, cmap="bwr", vmin=-1, vmax=1, level=level)
             ax.imshow(img_hm)
             axs[0][c].set_title(f"{cname}\n{cav_name}")
 
             cname = "box"
-            # all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
-            all_maxs = [all_concept_hms[cname][i].max() for n, all_concept_hms in cav_localizations.items() if n == cav_name]
+            all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
             normalization_constant = torch.max(torch.tensor(all_maxs))
             c = 1 + num_cavs + 1 + cav_idx
             ax = axs[i][c]
-            img_hm = imgify(localizations[cname][i] / normalization_constant, 
-                            cmap="bwr", vmin=-1, vmax=1, level=level)
+            img_hm = imgify(localizations[cname][i] / normalization_constant, cmap="bwr", vmin=-1, vmax=1, level=level)
             ax.imshow(img_hm)
             axs[0][c].set_title(f"{cname}\n{cav_name}")
 
-        
             cname = "Blond_Hair"
-            # all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
-            all_maxs = [all_concept_hms[cname][i].max() for n, all_concept_hms in cav_localizations.items() if n == cav_name]
-            normalization_constant = torch.max(torch.tensor(all_maxs))
-            c = 1 +  2 * (num_cavs + 1) + cav_idx
-            ax = axs[i][c]
-            img_hm = imgify(localizations[cname][i] / normalization_constant, 
-                            cmap="bwr", vmin=-1, vmax=1, level=level)
-            ax.imshow(img_hm)
-            axs[0][c].set_title(f"{cname}\n{cav_name}")
+            if cname in localizations:
+                all_maxs = [all_concept_hms[cname][i].max() for _, all_concept_hms in cav_localizations.items()]
+                normalization_constant = torch.max(torch.tensor(all_maxs))
+                c = 1 + 2 * (num_cavs + 1) + cav_idx
+                ax = axs[i][c]
+                img_hm = imgify(localizations[cname][i] / normalization_constant, cmap="bwr", vmin=-1, vmax=1, level=level)
+                ax.imshow(img_hm)
+                axs[0][c].set_title(f"{cname}\n{cav_name}")
 
-
-        # gts
         c = 1 + num_cavs
         ax = axs[i][c]
         ax.imshow(gt_timestamp[i].numpy())
-        axs[0][c].set_title(f"Ground Truth")
+        axs[0][c].set_title("Ground Truth")
 
-        # gt
         c = 1 + 2 * num_cavs + 1
         ax = axs[i][c]
         ax.imshow(gt_box[i].numpy())
-        axs[0][c].set_title(f"Ground Truth")
+        axs[0][c].set_title("Ground Truth")
 
     for _axs in axs:
         for ax in _axs:
             ax.set_xticks([])
             ax.set_yticks([])
 
-    print(f"Storing at {savepath}")
+    log.info("Storing heatmaps at %s", savepath)
     [fig.savefig(f"{savepath}.{ending}", bbox_inches="tight") for ending in ["jpg", "pdf"]]
-
-
-if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
-    logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
-    main()

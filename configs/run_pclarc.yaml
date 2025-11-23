@@ -1,6 +1,6 @@
 defaults:
   - hardware@experiment: workstation
-  - dataset: celeba_attacked
+  - dataset@dataset: celeba_attacked
   - model: vgg16
   - cav_model@cav: pattern_cav
   - _self_
@@ -8,13 +8,6 @@ defaults:
 experiment:
   name: pclarc
   random_seed: 42
-
-train:
-  learning_rate: 0.0001
-  num_epochs: 200
-  val_ratio: 0.1
-  test_ratio: 0.1
-  random_seed: ${experiment.random_seed}
 
 cav:
   cav_mode: max
@@ -25,5 +18,10 @@ cav:
   optimal_init: false
   exit_criterion: none
 
+dataset:
+  artifact_type: 
+  binary_target:
+
 correction:
   method: PClarc
+  layer: ${cav.layer}

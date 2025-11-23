@@ -1,5 +1,8 @@
 from experiments.clarc.base_correction import Vanilla
 from experiments.clarc.clarc import AClarc, Clarc, PClarc, ReactivePClarc
+from experiments.clarc.evaluate_by_subset_attacked import evaluate_by_subset_attacked
+from experiments.clarc.evaluate_model_correction import evaluate_model_correction
+from experiments.clarc.evaluate_heatmaps import evaluate_concept_heatmaps
 
 
 def get_correction_method(method_name):

@@ -20,7 +20,8 @@ def name_experiment(cfg: DictConfig) -> str:
     if cfg.cav.beta is not None:
         model_name += f"_beta{cfg.cav.beta}_n_targets{cfg.cav.n_targets}"
 
-    model_name += f"_lr{cfg.train.learning_rate}"
+    if "train" in cfg.keys():
+        model_name += f"_lr{cfg.train.learning_rate}"
 
     return model_name
 
