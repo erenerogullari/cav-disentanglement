@@ -179,11 +179,13 @@ def _train_epoch(
     criterion,
     optimizer,
     device: torch.device,
-) -> Tuple[float, float, float]:
+) -> Tuple[float, float, float, float, float]:
     model.train()
     total_loss = 0.0
     total_acc = 0.0
     total_f1 = 0.0
+    total_prec = 0.0
+    total_recall = 0.0
     total_samples = 0
 
     for inputs, targets in dataloader:
@@ -201,12 +203,16 @@ def _train_epoch(
         batch_stats = _multilabel_stats(outputs.detach(), targets, per_class=False)
         total_acc += batch_stats["accuracy"] * batch_size
         total_f1 += batch_stats["f1"] * batch_size
+        total_prec += batch_stats["precision"] * batch_size
+        total_recall += batch_stats["recall"] * batch_size
         total_samples += batch_size
 
     avg_loss = total_loss / total_samples
     avg_acc = total_acc / total_samples
     avg_f1 = total_f1 / total_samples
-    return avg_loss, avg_acc, avg_f1
+    avg_prec = total_prec / total_samples
+    avg_recall = total_recall / total_samples
+    return avg_loss, avg_acc, avg_f1, avg_prec, avg_recall
 
 
 def _evaluate(
@@ -265,9 +271,9 @@ def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **overrid
     model_loader = get_fn_model_loader(cfg_model.name)
     ckpt_path = _resolve_checkpoint_path(cfg_model, dataset_name)
     loader_kwargs = {
-        "ckpt_path": ckpt_path,
-        "pretrained": getattr(cfg_model, "pretrained", True),
-        "n_class": getattr(cfg_model, "n_class", 2) or 2,
+        "ckpt_path": getattr(cfg_model, "ckpt_path", None),
+        "pretrained": cfg_model.pretrained,
+        "n_class": cfg_model.n_class,
     }
     if hasattr(cfg_model, "in_channels"):
         loader_kwargs["in_channels"] = getattr(cfg_model, "in_channels")
@@ -345,7 +351,7 @@ def run(cfg: DictConfig) -> None:
 
     log.info("Starting training for %s epochs...", cfg.train.num_epochs)
     for epoch in range(1, cfg.train.num_epochs + 1):
-        train_loss, train_acc, train_f1 = _train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_acc, train_f1, train_prec, train_recall = _train_epoch(model, train_loader, criterion, optimizer, device)
 
         if val_loader is not None:
             val_loss, val_stats, _, _ = _evaluate(model, val_loader, criterion, device)
@@ -355,16 +361,21 @@ def run(cfg: DictConfig) -> None:
                 best_epoch = epoch
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
                 log.info(
-                    "Epoch %03d | train_loss=%.4f train_acc=%.4f train_f1=%.4f | val_loss=%.4f val_acc=%.4f val_f1=%.4f val_prec=%.4f val_recall=%.4f",
+                    "Epoch %03d | Train stats:  Loss=%.4f Acc=%.4f F1=%.4f Precision=%.4f Recall=%.4f",
                     epoch,
                     train_loss,
                     train_acc,
                     train_f1,
+                    train_prec,
+                    train_recall
+                )
+                log.info(
+                    "          | Val stats:    Loss=%.4f Acc=%.4f F1=%.4f Precision=%.4f Recall=%.4f",
                     val_loss,
                     val_stats["accuracy"],
                     val_stats["f1"],
                     val_stats["precision"],
-                    val_stats["recall"],
+                    val_stats["recall"]
                 )
         else:
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
@@ -376,21 +387,16 @@ def run(cfg: DictConfig) -> None:
 
     test_loss, test_stats, test_logits, test_targets = _evaluate(model, test_loader, criterion, device)
     log.info(
-        "Test metrics | loss=%.4f acc=%.4f f1=%.4f recall=%.4f",
+        "Test stats | loss=%.4f acc=%.4f f1=%.4f precision=%.4f recall=%.4f",
         test_loss,
         test_stats["accuracy"],
         test_stats["f1"],
+        test_stats["precision"],
         test_stats["recall"],
     )
 
     pr_curves = _precision_recall_analysis(test_logits, test_targets)
     test_stats = _multilabel_stats(test_logits, test_targets, per_class=True)
-    log.info("Test stats |  test_acc=%.4f test_prec=%.4f test_recall=%.4f test_f1=%.4f",
-             test_stats["accuracy"].mean(),
-             test_stats["precision"].mean(),
-             test_stats["recall"].mean(),
-             test_stats["f1"].mean()
-             )
 
     media_dir = Path(get_original_cwd()) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)

@@ -27,7 +27,7 @@ def get_resnet(model_fn, ckpt_path=None, pretrained=True, n_class: int = None) -
     if n_class and n_class != 1000:
         num_in = model.fc.in_features
         model.fc = torch.nn.Linear(num_in, n_class, bias=True)
-    if pretrained and ckpt_path:
+    if ckpt_path:
         checkpoint = torch.load(ckpt_path)
         if "state_dict" in checkpoint:
             checkpoint = checkpoint["state_dict"]

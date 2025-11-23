@@ -154,7 +154,7 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
             dir_model.eval()
             dir_model.requires_grad_(False)
 
-            encs_to_keep = normalize(move_cfg, dir_model, encs_to_keep, means, stds)
+            encs_to_keep_nrm = normalize(move_cfg, dir_model, encs_to_keep, means, stds)
 
             w_dir, b_dir = dir_model.get_direction(concept_idx)    # type: ignore
             w_dir = w_dir.to(device)
@@ -162,11 +162,11 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
 
             if move_cfg.move_method == "clarc":
                 w_dir = F.normalize(w_dir, dim=0)
-                mean_length = (encs_to_keep.flatten(start_dim=1) * w_dir).sum(1).mean(0)
+                mean_length = (encs_to_keep_nrm.flatten(start_dim=1) * w_dir).sum(1).mean(0)
                 median_logit = None
             else:
                 mean_length = None
-                logits = dir_model(encs_to_keep)[:, concept_idx]
+                logits = dir_model(encs_to_keep_nrm)[:, concept_idx]
                 median_logit = logits.median()
 
             dir_step_results: Dict[Optional[float], torch.Tensor] = {}
@@ -175,10 +175,10 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
                     raise ValueError(f"'step_sizes' must be provided for move_method '{move_cfg.move_method}'.")
                 
                 log.info("Moving encodings for step size=%s", step_size)
-                encs_to_move = normalize(move_cfg, dir_model, encs_to_move, means, stds)
+                encs_to_move_nrm = normalize(move_cfg, dir_model, encs_to_move, means, stds)
                 moved_norm = move_encs(
                     move_cfg,
-                    encs_to_move,
+                    encs_to_move_nrm,
                     w_dir,
                     b_dir,
                     median_logit,

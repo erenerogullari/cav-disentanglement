@@ -1,0 +1,48 @@
+_target_: datasets.get_elements_dataset
+data_paths: [""]
+normalize_data: true
+shuffle: true
+image_size: 224
+num_samples: 20000
+element_count: 3
+element_size: 64
+element_size_delta: 8
+element_seed: 2024
+loc_seed: 1337
+name: elements
+
+correlations:
+  - concept_names: ["shape:triangle", "texture:stripes_horizontal"]
+    degree: 0.8
+  - concept_names: ["shape:circle", "texture:stripes_vertical"]
+    degree: 0.7
+  - concept_names: ["shape:square", "texture:spots_random"]
+    degree: 0.6
+  - concept_names: ["color:red", "shape:plus"]
+    degree: 0.75
+  - concept_names: ["color:blue", "shape:cross"]
+    degree: 0.65
+
+localization:
+  concept_ids: []
+  concept_pair_ids: []
+
+class_configs:
+  - color: red
+    shape: null
+    texture: stripes_diagonal
+  - color: red
+    shape: null
+    texture: solid
+  - color: green
+    shape: null
+    texture: spots_polka
+  - color: green
+    shape: null
+    texture: stripes_diagonal
+  - color: blue
+    shape: null
+    texture: solid
+  - color: blue
+    shape: null
+    texture: spots_polka

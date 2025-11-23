@@ -92,36 +92,37 @@ def run_decode(config: DictConfig, moved_encodings: Dict[float, Dict[Optional[fl
     if max_images is not None and moved_idxs.size(0) > int(max_images):
         max_images = int(max_images)
         perm = torch.randperm(moved_idxs.size(0))[:max_images]
-        moved_idxs = moved_idxs[perm]
+        selected_idxs = moved_idxs[perm]
     elif max_images is not None and moved_idxs.size(0) <= int(max_images):
         raise ValueError(f"Not enough samples to move for num_images={max_images}")
+    else: 
+        perm = torch.randperm(moved_idxs.size(0))
+        selected_idxs = moved_idxs[perm]
 
     model = build_model(config, device)
-    dataset = instantiate(config.dataset).get_subset_by_idxs(moved_idxs.tolist())  # type: ignore
+    dataset = instantiate(config.dataset).get_subset_by_idxs(selected_idxs.tolist())  # type: ignore
 
     image_format = getattr(experiment_cfg, "format", "png")
     output_root = Path("results") / "diffae" / "decodings" / config.dir_model.name
     output_root.mkdir(parents=True, exist_ok=True)
 
-    moved_indices = moved_idxs.long().tolist()
     log.info(
         "Starting decoding for %d samples across %d direction models.",
-        len(moved_indices),
+        len(selected_idxs.long().tolist()),
         len(moved_encodings),
     )
 
-    results = {}
     for alpha, step_dict in sorted(moved_encodings.items(), key=lambda item: item[0]):
         log.info("Decoding encodings for alpha=%s", alpha)
 
         for step_size, encs in sorted(step_dict.items(), key=lambda item: item[0]): # type: ignore
             log.info("Decoding encodings for step size=%s", step_size)
-            encs = encs[moved_idxs].to(device)
+            encodings = encs[perm].to(device)
             dataloader = DataLoader(
                 TensorDataset(
                     torch.stack([sample for sample, _ in dataset]),
-                    encs,
-                    moved_idxs
+                    encodings,
+                    selected_idxs
                 ), 
                 batch_size=experiment_cfg.batch_size, 
                 shuffle=False
