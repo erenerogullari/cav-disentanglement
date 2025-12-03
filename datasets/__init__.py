@@ -5,6 +5,8 @@ from datasets.elements.elements import get_elements_dataset
 from datasets.funnybirds.funnybirds import get_funnybirds
 from datasets.funnybirds.funnybirds_attributes import get_funnybirds_attributes
 from datasets.base_dataset import BaseDataset
+from datasets.celeba.celebahq import CelebAHQ
+from datasets.celeba.celebahq_with_encodings import CelebAHQWithEncodings
 
 
 DATASETS = {
