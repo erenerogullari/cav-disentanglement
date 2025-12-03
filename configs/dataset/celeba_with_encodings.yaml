@@ -1,0 +1,5 @@
+_target_: datasets.CelebAHQWithEncodings
+path_data: /Users/erogullari/datasets/celeba/images
+path_encodings: /Users/erogullari/Desktop/Workspace/cav-disentanglement/variables/latents_celeba_diffae
+n_samples: 202599
+name: celeba

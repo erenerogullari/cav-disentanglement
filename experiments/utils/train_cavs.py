@@ -151,9 +151,12 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
-                                        normalize_data=cfg.dataset.normalize_data,
-                                        image_size=cfg.dataset.image_size)
+    if cfg.experiment.name == "diffae":
+        dataset = instantiate(cfg.dataset)
+    else:
+        dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
+                                            normalize_data=cfg.dataset.normalize_data,
+                                            image_size=cfg.dataset.image_size)
     concept_names = dataset.get_concept_names()
 
     # for i, c in enumerate(concept_names):

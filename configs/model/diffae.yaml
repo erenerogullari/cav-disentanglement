@@ -1,6 +1,5 @@
 _target_: models.DiffAE
-
 config_name: ffhq128_autoenc_130m
-path_ckpt: "checkpoints/ffhq128.ckpt"
+path_ckpt: checkpoints/ffhq128.ckpt
 T_encode: 250
 T_decode: 100

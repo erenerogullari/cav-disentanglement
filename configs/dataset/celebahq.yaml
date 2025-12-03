@@ -1,0 +1,5 @@
+_target_: datasets.CelebAHQ
+path_data: /Users/erogullari/datasets/celebahq/images
+path_labels: /Users/erogullari/datasets/celebahq/labels/original.csv
+n_samples: 202599
+name: celebahq
