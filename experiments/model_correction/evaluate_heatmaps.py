@@ -20,7 +20,7 @@ from models import get_canonizer
 from sklearn.metrics import jaccard_score
 from zennit.composites import EpsilonPlusFlat
 
-from experiments.clarc.utils import first_config_value, get_model_name, load_base_model
+from experiments.model_correction.utils import first_config_value, get_model_name, load_base_model
 from experiments.utils.activations import extract_latents
 from experiments.utils.utils import name_experiment
 from utils.cav import compute_cavs

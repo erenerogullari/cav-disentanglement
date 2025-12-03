@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from zennit.core import stabilize
 
-from experiments.clarc.base_correction import LitClassifier, Freeze
+from experiments.model_correction.base_correction import LitClassifier, Freeze
 from utils.cav import compute_cav
 
 

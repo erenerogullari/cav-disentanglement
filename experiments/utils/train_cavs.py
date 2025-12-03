@@ -159,12 +159,6 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     cavs_original, bias_original = compute_cavs(train_latents, train_labels, type=cfg.cav.name, normalize=True)
     cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device=device)
 
-    # Check if CAVs are already trained
-    if (save_dir / "state_dict.pth").exists():
-        log.info(f"CAVs already trained and saved at {save_dir}. Loading existing model.")
-        cav_model.load_state_dict(torch.load(save_dir / "state_dict.pth"))
-        return cav_model
-
     if cfg.cav.optimal_init:
         cav_model.load_state_dict({'weights': cavs_original, 'bias': bias_original})
     cav_model = cav_model.to(device)
