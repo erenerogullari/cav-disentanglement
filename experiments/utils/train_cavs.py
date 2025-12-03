@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 import logging
 import os
 import copy
+import inspect
 from models import get_fn_model_loader
 from datasets import get_dataset
 from utils.cav import compute_cavs
@@ -28,6 +29,28 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     checkpoint_path = checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
     return checkpoint_path
 
+def _load_model(cfg_model: DictConfig, ckpt_path: Path, device: torch.device) -> nn.Module:
+    model_loader = get_fn_model_loader(cfg_model.name)
+    loader_kwargs = {
+        "ckpt_path": ckpt_path if ckpt_path.is_file() else getattr(cfg_model, "ckpt_path", None),
+        "pretrained": cfg_model.pretrained,
+        "n_class": cfg_model.n_class,
+    }
+    if hasattr(cfg_model, "in_channels"):
+        loader_kwargs["in_channels"] = getattr(cfg_model, "in_channels")
+    if hasattr(cfg_model, "input_size"):
+        loader_kwargs["input_size"] = getattr(cfg_model, "input_size")
+
+    signature = inspect.signature(model_loader)
+    accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values())
+    if not accepts_var_kw:
+        loader_kwargs = {k: v for k, v in loader_kwargs.items() if k in signature.parameters}
+
+    if "device" in signature.parameters:
+        loader_kwargs["device"] = device
+
+    model = model_loader(**loader_kwargs)
+    return model.to(device)
 
 def train_test_split(cfg, dataset, x_latent, labels):
     idxs_train, idxs_val, idxs_test = dataset.do_train_val_test_split(
@@ -133,6 +156,10 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
                                         image_size=cfg.dataset.image_size)
     concept_names = dataset.get_concept_names()
 
+    # for i, c in enumerate(concept_names):
+    #     print(f"Concept {i}: {c}")
+    # raise ValueError()
+
     if encodings is not None and labels is not None:
         log.info("Using provided encodings and labels for CAV training.")
         x_latent = encodings
@@ -141,9 +168,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         log.info("No encodings provided. Extracting latents from model and dataset.")
         log.info(f"Loading model: {cfg.model.name}")
         ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-        model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
-                                                    pretrained=cfg.model.pretrained,
-                                                    n_class=cfg.model.n_class).to(device)
+        model = _load_model(cfg.model, ckpt_path, device)
         log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
         x_latent, labels = extract_latents(cfg, model, dataset)
 

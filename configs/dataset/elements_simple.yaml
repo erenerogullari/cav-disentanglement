@@ -24,25 +24,16 @@ correlations:
     degree: 0.65
 
 localization:
-  concept_ids: []
-  concept_pair_ids: []
+  concept_ids: [0, 1, 2, 3, 4, 5, 9, 14, 18, 19]
+  concept_pair_ids: [[4, 18], [0, 19], [3, 14], [9, 2], [5, 1]]
 
 class_configs:
+  - color: null
+    shape: circle
+    texture: null
   - color: red
     shape: null
-    texture: stripes_diagonal
-  - color: red
+    texture: null
+  - color: null
     shape: null
-    texture: solid
-  - color: green
-    shape: null
-    texture: spots_polka
-  - color: green
-    shape: null
-    texture: stripes_diagonal
-  - color: blue
-    shape: null
-    texture: solid
-  - color: blue
-    shape: null
-    texture: spots_polka
+    texture: spots_random

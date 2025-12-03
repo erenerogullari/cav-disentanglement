@@ -12,7 +12,8 @@ experiment:
 train:
   learning_rate: 0.0001
   num_epochs: 200
-  train_ratio: 0.9
+  val_ratio: 0.1
+  test_ratio: 0.1
   random_seed: 42
 
 cav:
