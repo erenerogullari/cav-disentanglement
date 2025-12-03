@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from datasets import get_dataset, get_dataset_kwargs
 from datasets.celeba.artificial_artifact import get_artifact_kwargs
-from experiments.clarc import get_correction_method
+from experiments.model_correction import get_correction_method
 from utils.metrics import get_accuracy, get_f1, get_auc_label, get_fnr_label, get_fpr_label
 
 from sklearn.metrics import confusion_matrix

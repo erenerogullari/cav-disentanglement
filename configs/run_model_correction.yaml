@@ -2,11 +2,12 @@ defaults:
   - hardware@experiment: workstation
   - dataset@dataset: celeba_attacked
   - model: vgg16
-  - cav_model@cav: pattern_cav
+  - cav_model@cav_model: pattern_cav
   - _self_
 
 experiment:
-  name: pclarc
+  name: model_correction
+  out: results/${experiment.name}/${cav_model.name}/alpha${cav.alpha}
   random_seed: 42
 
 cav:

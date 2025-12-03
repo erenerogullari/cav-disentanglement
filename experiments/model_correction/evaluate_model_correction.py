@@ -14,8 +14,8 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 
-from experiments.clarc import get_correction_method, evaluate_by_subset_attacked
-from experiments.clarc.utils import (
+from experiments.model_correction import get_correction_method, evaluate_by_subset_attacked
+from experiments.model_correction.utils import (
     first_config_value,
     get_dataset_name,
     get_model_name,
@@ -109,7 +109,7 @@ def _compose_clarc_config(
     if dir_precomputed is None:
         raise ValueError("'dir_precomputed_data' is required for CLArC corrections.")
     clarc_cfg["dir_precomputed_data"] = dir_precomputed
-    return clarc_cfg
+    return clarc_cfg    # type: ignore
 
 
 def _build_clarc_kwargs(config: DictConfig, dataset: Dataset, clarc_cfg: dict[str, Any]) -> dict[str, Any]:
