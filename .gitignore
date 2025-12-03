@@ -8,6 +8,9 @@ results/
 # Model checkpoints
 checkpoints/
 
+# Configurations
+# configs/dataset/celeba
+
 # Variables
 variables/
 

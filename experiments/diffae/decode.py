@@ -64,13 +64,14 @@ def save_batch(
     alpha_dir = output_root / f"alpha{_format_float(alpha)}"
     index_list = batch_indices.detach().cpu().tolist()
 
-    for img_idx, orig_img, dec_img in zip(index_list, originals, decodings):
+    for i, img_idx in enumerate(index_list):
+        orig_img = originals[i]
+        dec_img = decodings[i]
         img_dir = alpha_dir / f"img{int(img_idx)}"
         img_dir.mkdir(parents=True, exist_ok=True)
 
         original_path = img_dir / f"original.{image_format}"
         if not original_path.exists():
-
             torchvision.utils.save_image(orig_img, original_path)
 
         step_suffix = _format_float(step_size) if step_size is not None else "0"
@@ -78,8 +79,9 @@ def save_batch(
         torchvision.utils.save_image(dec_img, decoded_path)
 
 
-def run_decode(config: DictConfig, moved_encodings: Dict[float, Dict[Optional[float], torch.Tensor]], moved_idxs: torch.Tensor) -> None:
+def run_decode(config: DictConfig) -> None:
     experiment_cfg = config.experiment
+    alpha = config.dir_model.alpha
 
     log.info("Seeding RNGs with %s", experiment_cfg.seed)
     seed_everything(int(experiment_cfg.seed))
@@ -88,62 +90,56 @@ def run_decode(config: DictConfig, moved_encodings: Dict[float, Dict[Optional[fl
     log.info("Using device %s", device)
 
     move_cfg = config.move_encs
-    max_images = getattr(move_cfg, "num_images", None)
-    if max_images is not None and moved_idxs.size(0) > int(max_images):
-        max_images = int(max_images)
-        perm = torch.randperm(moved_idxs.size(0))[:max_images]
-        selected_idxs = moved_idxs[perm]
-    elif max_images is not None and moved_idxs.size(0) <= int(max_images):
-        raise ValueError(f"Not enough samples to move for num_images={max_images}")
-    else: 
-        perm = torch.randperm(moved_idxs.size(0))
-        selected_idxs = moved_idxs[perm]
+    max_images = getattr(move_cfg, "num_images", 10)
+    decode_idxs = list(range(max_images))
 
     model = build_model(config, device)
-    dataset = instantiate(config.dataset).get_subset_by_idxs(selected_idxs.tolist())  # type: ignore
 
     image_format = getattr(experiment_cfg, "format", "png")
-    output_root = Path("results") / "diffae" / "decodings" / config.dir_model.name
+    cache_dir = Path("results") / "diffae" / str(config.decode.dataset.name)
+    output_root = cache_dir / "decodings" / config.dir_model.name
     output_root.mkdir(parents=True, exist_ok=True)
 
-    log.info(
-        "Starting decoding for %d samples across %d direction models.",
-        len(selected_idxs.long().tolist()),
-        len(moved_encodings),
-    )
+    step_sizes = getattr(move_cfg, "step_sizes", None)
+    if step_sizes is None:
+        raise ValueError("step_sizes must be provided in move_encs config.")
+    else:
+        step_sizes = [float(step) for step in step_sizes]
 
-    for alpha, step_dict in sorted(moved_encodings.items(), key=lambda item: item[0]):
-        log.info("Decoding encodings for alpha=%s", alpha)
+    for step_size in step_sizes:  
+        log.info("Decoding encodings for step size=%s", step_size)
+        
+        step_suffix = _format_float(step_size) if step_size is not None else "0"
+        path_out = cache_dir / "moved_encs" / str(config.dir_model.name) / f"alpha{alpha}" / f"step_size{step_suffix}"
+        cfg_dataset = config.decode.dataset
+        cfg_dataset.path_encodings = str(path_out)
+        dataset = instantiate(cfg_dataset).get_subset_by_idxs(decode_idxs)
 
-        for step_size, encs in sorted(step_dict.items(), key=lambda item: item[0]): # type: ignore
-            log.info("Decoding encodings for step size=%s", step_size)
-            encodings = encs[perm].to(device)
-            dataloader = DataLoader(
-                TensorDataset(
-                    torch.stack([sample for sample, _ in dataset]),
-                    encodings,
-                    selected_idxs
-                ), 
-                batch_size=experiment_cfg.batch_size, 
-                shuffle=False
-            )
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_size=config.experiment.batch_size, 
+            shuffle=False
+        )
 
+        for batch in tqdm(dataloader, desc=f"Decoding step size {step_size}"):
+
+            batch_img, batch_enc, _, batch_idx = batch
+            batch_img = batch_img.to(torch.float32).to(device)
+            batch_enc= batch_enc.to(torch.float32).to(device)
+                
             with torch.no_grad():
-                for batch_imgs, batch_encs, idxs in tqdm(dataloader, desc=f"Decoding step size {step_size}"):
-                    batch_encs = batch_encs.to(device=device, dtype=torch.float32)
-                    batch_imgs = batch_imgs.to(device=device, dtype=torch.float32)
 
-                    batch_encs_orig = model.encode(batch_imgs)
-                    batch_x_T = model.encode_stochastic(batch_imgs, batch_encs_orig)
-                    batch_dec = model.decode(batch_x_T, batch_encs)
+                batch_enc_orig = model.encode(batch_img)
+                batch_x_T = model.encode_stochastic(batch_img, batch_enc_orig)
+                batch_dec = model.decode(batch_x_T, batch_enc)
 
-                    save_batch(
-                        output_root=output_root,
-                        image_format=image_format,
-                        alpha=alpha,
-                        step_size=step_size,
-                        batch_indices=idxs,
-                        originals=dataset.reverse_normalization(batch_imgs).float() / 255.0,
-                        decodings=batch_dec,
-                    )
+            save_batch(
+                output_root=output_root,
+                image_format=image_format,
+                alpha=alpha,
+                step_size=step_size,
+                batch_indices=batch_idx,
+                originals=batch_img,
+                decodings=batch_dec,
+            )
             
