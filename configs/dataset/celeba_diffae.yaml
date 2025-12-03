@@ -1,0 +1,5 @@
+_target_: datasets.CelebAHQ
+path_data: /Users/erogullari/datasets/celeba/images
+path_labels: /Users/erogullari/datasets/celeba/labels/original.csv
+n_samples: 202599
+name: celeba

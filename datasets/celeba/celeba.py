@@ -19,6 +19,8 @@ celeba_augmentation = T.Compose([
     T.RandomApply(transforms=[T.Pad(10, fill=0), T.Resize(224)], p=.25)
 ])
 
+NORMALIZATION = T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+
 
 def get_celeba_dataset(data_paths, normalize_data=True, image_size=224, artifact_ids_file=None, **kwargs):
     fns_transform = [
@@ -27,7 +29,8 @@ def get_celeba_dataset(data_paths, normalize_data=True, image_size=224, artifact
     ]
 
     if normalize_data:
-        fns_transform.append(T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]))
+        # fns_transform.append(T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]))
+        fns_transform.append(NORMALIZATION)
 
     transform = T.Compose(fns_transform)
 
@@ -45,7 +48,7 @@ class CelebADataset(BaseDataset):
         
         self.attributes = pd.DataFrame(ds.attr, columns=ds.attr_names[:-1]) # type: ignore
         
-        USE_SUBSET = True
+        USE_SUBSET = False
         if USE_SUBSET:
             log.info("Using subset.")
             NTH = 10
@@ -66,7 +69,7 @@ class CelebADataset(BaseDataset):
         self.metadata = pd.DataFrame(
             {'image_id': np.array(ds.filename)[filter_indices == 1], 'targets': labels})
         
-        self.normalize_fn = T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        self.normalize_fn = NORMALIZATION
 
         self.classes = [f'Non-{ATTR_LABEL}', ATTR_LABEL]
         self.class_names = self.classes
@@ -119,5 +122,6 @@ if __name__ == "__main__":
     import torchvision
     data_paths = ["/Users/erogullari/datasets/"]
     ds = get_celeba_dataset(data_paths, normalize_data=True, image_size=224)
-    img, _ = ds[0]
-    torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, "results/celeba_sample.png")
+    for i in range(10):
+        img, _ = ds[i]
+        torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, f"DELETE/celeba_decs/dec{i}.png")
