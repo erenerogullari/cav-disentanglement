@@ -1,4 +1,4 @@
-name: lenet5
+name: simplenet
 n_class: 69
 pretrained: False
 in_channels: 3

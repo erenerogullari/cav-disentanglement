@@ -179,7 +179,7 @@ def _train_epoch(
     criterion,
     optimizer,
     device: torch.device,
-) -> Tuple[float, float, float, float, float]:
+) -> Tuple[float, Dict[str, float]]:
     model.train()
     total_loss = 0.0
     total_acc = 0.0
@@ -188,6 +188,7 @@ def _train_epoch(
     total_recall = 0.0
     total_samples = 0
 
+    train_stats = {}
     for inputs, targets in dataloader:
         inputs = inputs.to(device)
         targets = _prepare_targets(targets, device)
@@ -208,11 +209,11 @@ def _train_epoch(
         total_samples += batch_size
 
     avg_loss = total_loss / total_samples
-    avg_acc = total_acc / total_samples
-    avg_f1 = total_f1 / total_samples
-    avg_prec = total_prec / total_samples
-    avg_recall = total_recall / total_samples
-    return avg_loss, avg_acc, avg_f1, avg_prec, avg_recall
+    train_stats["accuracy"] = total_acc / total_samples
+    train_stats["f1"] = total_f1 / total_samples
+    train_stats["precision"] = total_prec / total_samples
+    train_stats["recall"] = total_recall / total_samples
+    return avg_loss, train_stats
 
 
 def _evaluate(
@@ -341,7 +342,7 @@ def run(cfg: DictConfig) -> None:
     else:
         criterion = nn.BCEWithLogitsLoss()
 
-    optimizer = optim.SGD(model.parameters(), lr=cfg.train.learning_rate, momentum=cfg.train.momentum ,weight_decay=cfg.train.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=cfg.train.learning_rate)
 
     best_state = None
     best_metric = 0
@@ -351,12 +352,12 @@ def run(cfg: DictConfig) -> None:
 
     log.info("Starting training for %s epochs...", cfg.train.num_epochs)
     for epoch in range(1, cfg.train.num_epochs + 1):
-        train_loss, train_acc, train_f1, train_prec, train_recall = _train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_stats = _train_epoch(model, train_loader, criterion, optimizer, device)
 
         if val_loader is not None:
             val_loss, val_stats, _, _ = _evaluate(model, val_loader, criterion, device)
-            if cfg.train.save_best and val_stats["f1"] > best_metric:
-                best_metric = val_stats["f1"]
+            if cfg.train.save_best and val_stats["accuracy"] > best_metric:
+                best_metric = val_stats["accuracy"]
                 best_state = copy.deepcopy(model.state_dict())
                 best_epoch = epoch
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
@@ -364,10 +365,10 @@ def run(cfg: DictConfig) -> None:
                     "Epoch %03d | Train stats:  Loss=%.4f Acc=%.4f F1=%.4f Precision=%.4f Recall=%.4f",
                     epoch,
                     train_loss,
-                    train_acc,
-                    train_f1,
-                    train_prec,
-                    train_recall
+                    train_stats["accuracy"],
+                    train_stats["f1"],
+                    train_stats["precision"],
+                    train_stats["recall"]
                 )
                 log.info(
                     "          | Val stats:    Loss=%.4f Acc=%.4f F1=%.4f Precision=%.4f Recall=%.4f",
@@ -377,12 +378,23 @@ def run(cfg: DictConfig) -> None:
                     val_stats["precision"],
                     val_stats["recall"]
                 )
+                log.info(
+                    "-----------------------------------------------------------------------------------------"
+                )
         else:
             if epoch % log_every == 0 or epoch == 1 or epoch == cfg.train.num_epochs:
-                log.info("Epoch %03d | train_loss=%.4f train_acc=%.4f train_f1=%.4f", epoch, train_loss, train_acc, train_f1)
+                log.info(
+                    "Epoch %03d | Train stats:  Loss=%.4f Acc=%.4f F1=%.4f Precision=%.4f Recall=%.4f",
+                    epoch,
+                    train_loss,
+                    train_stats["accuracy"],
+                    train_stats["f1"],
+                    train_stats["precision"],
+                    train_stats["recall"]
+                )
 
     if best_state is not None:
-        log.info("Loading best model from epoch %d with val_f1=%.4f", best_epoch, best_metric)
+        log.info("Loading best model from epoch %d with val_acc=%.4f", best_epoch, best_metric)
         model.load_state_dict(best_state)
 
     test_loss, test_stats, test_logits, test_targets = _evaluate(model, test_loader, criterion, device)

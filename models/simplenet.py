@@ -1,12 +1,11 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import Tuple, Union
 import os
 
-class LeNet5(nn.Module):
+class SimpleNet(nn.Module):
     def __init__(self, num_classes=2, in_channels: int = 1, input_size: Union[int, Tuple[int, int]] = 32):
-        super(LeNet5, self).__init__()
+        super(SimpleNet, self).__init__()
         self.in_channels = int(in_channels)
         if isinstance(input_size, (tuple, list)):
             if len(input_size) != 2:
@@ -16,41 +15,43 @@ class LeNet5(nn.Module):
             size_int = int(input_size)
             self.input_size = (size_int, size_int)
 
-        self.conv1 = nn.Conv2d(in_channels, 6, kernel_size=5, stride=1, padding=2)
-        self.pool1 = nn.AvgPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.Conv2d(6, 16, kernel_size=5)
-        self.pool2 = nn.AvgPool2d(kernel_size=2, stride=2)
+        layers = []
+        current_channels = self.in_channels
+        for idx in range(6):
+            layers.append(nn.Conv2d(current_channels, 64, kernel_size=3, stride=1, padding=1, bias=False))
+            layers.append(nn.BatchNorm2d(64))
+            layers.append(nn.ReLU(inplace=True))
+            if idx < 3:
+                layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+            current_channels = 64
 
+        self.features = nn.Sequential(*layers)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         feature_dim = self._infer_feature_dim()
-
-        self.fc1 = nn.Linear(feature_dim, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, num_classes)
+        self.classifier = nn.Linear(feature_dim, num_classes)
 
     def _infer_feature_dim(self) -> int:
         with torch.no_grad():
             dummy = torch.zeros(1, self.in_channels, self.input_size[0], self.input_size[1])
-            out = self.pool1(F.tanh(self.conv1(dummy)))
-            out = self.pool2(F.tanh(self.conv2(out)))
+            out = self.features(dummy)
+            out = self.avgpool(out)
             return out.flatten(1).shape[1]
 
     def forward(self, x):
-        x = self.pool1(F.tanh(self.conv1(x)))
-        x = self.pool2(F.tanh(self.conv2(x)))
+        x = self.features(x)
+        x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = F.tanh(self.fc1(x))
-        x = F.tanh(self.fc2(x))
-        x = self.fc3(x)
+        x = self.classifier(x)
         return x
     
 
-def get_lenet5(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: int = 1, input_size: int = 32) -> torch.nn.Module:
+def get_simplenet(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: int = 1, input_size: int = 32) -> torch.nn.Module:
 
     if n_class == 0:
-        raise ValueError("n_class must be specified for LeNet5 model.")
+        raise ValueError("n_class must be specified for SimpleNet model.")
     
-    model = LeNet5(
-        num_classes=n_class if n_class else 2,
+    model = SimpleNet(
+        num_classes=n_class,
         in_channels=in_channels,
         input_size=input_size,
     )
@@ -71,12 +72,12 @@ def get_lenet5(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: i
     return model
 
 
-def get_lenet_canonizer():
+def get_simplenet_canonizer():
     return []
 
 
 if __name__ == "__main__":
     # Print layer names
-    model = get_lenet5(n_class=10, in_channels=3, input_size=224)
+    model = get_simplenet(n_class=10, in_channels=3, input_size=32)
     for name, module in model.named_modules():
         print(f"{name}: {module}")
