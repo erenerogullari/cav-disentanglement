@@ -123,7 +123,7 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
     experiment_cfg = config.experiment
     move_cfg = config.move_encs
     alpha = config.dir_model.alpha 
-    cache_dir = Path("results") / "diffae" / str(config.encode.dataset.name) / "moved_encs" / str(config.dir_model.name) / f"alpha{alpha}"
+    cache_dir = Path(config.experiment.out) / "moved_encs" / str(config.dir_model.name) / f"alpha{alpha}"
 
     cache_dir.mkdir(parents=True, exist_ok=True)
 

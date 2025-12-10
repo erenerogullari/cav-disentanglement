@@ -10,18 +10,29 @@ from omegaconf import DictConfig, OmegaConf
 import logging
 import os
 import copy
+import random
+from typing import Optional, Dict, Any
 import inspect
 from models import get_fn_model_loader
 from datasets import get_dataset
 from utils.cav import compute_cavs
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
-from experiments.utils.utils import name_experiment, initialize_weights, save_results, save_plots
+from experiments.utils.utils import get_save_dir, initialize_weights, save_results, save_plots
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+def seed_everything(seed: Optional[int]) -> None:
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
@@ -140,18 +151,18 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     Returns:
         cav_model (nn.Module): Trained CAV model.
     """
-    # Set up the device and seed from the config
     device = cfg.train.device
     log.info(f"Using device: {device}")
-    torch.manual_seed(cfg.train.random_seed)
+    seed_everything(cfg.train.random_seed)
+
     if save_dir is None:
-        model_name = name_experiment(cfg)
-        save_dir = Path(get_original_cwd()) / "results" / cfg.experiment.name / model_name
+        save_dir =  get_save_dir(cfg)
+        
     (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
     (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    if cfg.experiment.name == "diffae":
+    if cfg.experiment.name == "activation_steering":
         dataset = instantiate(cfg.dataset)
     else:
         dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
@@ -159,9 +170,6 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
                                             image_size=cfg.dataset.image_size)
     concept_names = dataset.get_concept_names()
 
-    # for i, c in enumerate(concept_names):
-    #     print(f"Concept {i}: {c}")
-    # raise ValueError()
 
     if encodings is not None and labels is not None:
         log.info("Using provided encodings and labels for CAV training.")
@@ -185,13 +193,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
     cav_cfg = {"_target_": raw_cav_cfg["_target_"]} # type: ignore
     cavs_original, bias_original = compute_cavs(train_latents, train_labels, type=cfg.cav.name, normalize=True)
-    cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device=device)
-
-    # Check if CAVs are already trained
-    if (save_dir / "state_dict.pth").exists():
-        log.info(f"CAVs already trained and saved at {save_dir}. Loading existing model.")
-        cav_model.load_state_dict(torch.load(save_dir / "state_dict.pth"))
-        return cav_model
+    cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu")
 
     if cfg.cav.optimal_init:
         cav_model.load_state_dict({'weights': cavs_original, 'bias': bias_original})
@@ -261,7 +263,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         'confusion_matrix_hist': confusion_matrix_history,
         'early_exit_epoch':  early_exit_epoch,
     }
-    save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)
+    save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)   
     save_plots(best_cavs.get_params()[0].detach(), cavs_original, final_metrics, x_latent, labels, concept_names, save_dir)
     torch.save(best_cavs.state_dict(), os.path.join(save_dir, 'state_dict.pth'))
 

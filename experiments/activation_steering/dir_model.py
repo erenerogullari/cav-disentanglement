@@ -43,8 +43,8 @@ def prepare_config(cfg: DictConfig, alpha: float) -> DictConfig:
                 "alpha": alpha,
                 "beta": None,
                 "n_targets": 0,
-                "optimal_init": False,
-                "exit_criterion": "auc",
+                "optimal_init": cfg.dir_model.optimal_init,
+                "exit_criterion": cfg.dir_model.exit_criterion,
                 "cav_mode": getattr(cfg.move_encs, "cav_mode", "max"),
             },
         }
@@ -53,7 +53,7 @@ def prepare_config(cfg: DictConfig, alpha: float) -> DictConfig:
     return DictConfig(cav_cfg)
 
 def get_dir_model(cfg: DictConfig, encodings: torch.Tensor, labels: torch.Tensor) -> nn.Module:
-    cache_dir = Path("results") / "diffae" / str(cfg.encode.dataset.name) / "dir_models" / str(cfg.dir_model.name)
+    cache_dir = Path(cfg.experiment.out) / "dir_models" / str(cfg.dir_model.name)
     alpha = cfg.dir_model.alpha
     save_dir = cache_dir / f"alpha{alpha}"
     state_path = save_dir / "state_dict.pth"

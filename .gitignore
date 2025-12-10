@@ -9,7 +9,7 @@ results/
 checkpoints/
 
 # Configurations
-# configs/dataset/celeba
+configs/
 
 # Variables
 variables/
