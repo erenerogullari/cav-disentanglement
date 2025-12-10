@@ -46,7 +46,7 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
         torch.Tensor: A tensor containing the extracted latent representations.
         torch.Tensor: A tensor containing the corresponding labels.
     """
-    cache_dir = Path(get_original_cwd()) / "variables" / f"latents_{cfg.dataset.name}_{cfg.model.name}"
+    cache_dir = Path(get_original_cwd()) / "variables" / f"{cfg.dataset.name}" / f"{cfg.model.name}"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_name = f"{cfg.cav.layer}.pth"
     cache_path = cache_dir / cache_name

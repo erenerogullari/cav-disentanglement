@@ -10,7 +10,7 @@ from experiments.utils.localization import localize_concepts, colocalize_concept
 
 log = logging.getLogger(__name__)
 
-@hydra.main(version_base=None, config_path="../configs", config_name="disentangle_cavs")
+@hydra.main(version_base=None, config_path="../configs", config_name="cav_disentanglement")
 def run(cfg: DictConfig) -> None:
     """Main function to run the disentangle_cavs experiment.
     Args:

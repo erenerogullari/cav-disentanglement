@@ -96,7 +96,7 @@ def run_decode(config: DictConfig) -> None:
     model = build_model(config, device)
 
     image_format = getattr(experiment_cfg, "format", "png")
-    cache_dir = Path("results") / "diffae" / str(config.decode.dataset.name)
+    cache_dir = Path(config.experiment.out)
     output_root = cache_dir / "decodings" / config.dir_model.name
     output_root.mkdir(parents=True, exist_ok=True)
 

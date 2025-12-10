@@ -20,7 +20,7 @@ from datasets import get_dataset
 from utils.visualizations import visualize_heatmaps, visualize_heatmap_pair
 from utils.cav import compute_cavs
 from experiments.utils.activations import _get_features, extract_latents
-from experiments.utils.utils import name_experiment
+from experiments.utils.utils import get_save_dir
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
@@ -106,9 +106,7 @@ def localize_concepts(cfg: DictConfig) -> None:
     log.info(f"Using device: {device}")
     torch.manual_seed(cfg.localization.random_seed)
     random.seed(cfg.localization.random_seed)
-    model_name = name_experiment(cfg)
-    original_cwd = hydra.utils.get_original_cwd()
-    save_dir = os.path.join(original_cwd, "results", "disentangle_cavs", model_name)
+    save_dir = get_save_dir(cfg)
 
     # Load model and dataset 
     log.info(f"Loading model: {cfg.model.name}")
@@ -180,9 +178,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
     log.info(f"Using device: {device}")
     torch.manual_seed(cfg.localization.random_seed)
     random.seed(cfg.localization.random_seed)
-    model_name = name_experiment(cfg)
-    original_cwd = hydra.utils.get_original_cwd()
-    save_dir = os.path.join(original_cwd, "results", "disentangle_cavs", model_name)
+    save_dir = get_save_dir(cfg)
 
     # Load model and dataset 
     log.info(f"Loading model: {cfg.model.name}")
