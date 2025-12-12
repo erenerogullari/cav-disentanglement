@@ -63,9 +63,9 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
         torch.Tensor: A tensor containing the extracted latent representations.
         torch.Tensor: A tensor containing the corresponding labels.
     """
-    cache_dir = Path(get_original_cwd()) / "variables"
+    cache_dir = Path(get_original_cwd()) / "variables" / f"{cfg.dataset.name}" / f"{cfg.model.name}"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_name = f"vars_{cfg.dataset.name}_{cfg.cav.layer}_{cfg.model.name}.pth"
+    cache_name = f"{cfg.cav.layer}.pth"
     cache_path = cache_dir / cache_name
 
     if cache_path.exists():
@@ -86,10 +86,11 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
             x_latent = x_latent.detach().cpu()
             x_latent_all.append(x_latent)
         x_latent_all = torch.cat(x_latent_all)
+        labels = dataset.get_labels().clamp(min=0)  # type: ignore
 
         vars = {
             "encs": x_latent_all,
-            "labels": dataset.get_labels().clamp(min=0)  # type: ignore
+            "labels": labels
         }
         torch.save(vars, cache_path)
         

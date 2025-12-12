@@ -5,8 +5,9 @@ shuffle: True
 image_size: 224
 attacked_classes:
   - 1 
-artifact: artificial
+artifact: timestamp
 artifact_type: ch_time
+time_format: datetime
 p_artifact: 0.4
 entanglement_factor: 5
 name: celeba_attacked

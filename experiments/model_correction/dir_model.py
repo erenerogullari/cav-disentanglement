@@ -1,14 +1,23 @@
 import torch
 import torch.nn as nn
+from torchvision.utils import save_image
 import logging
 from omegaconf import DictConfig, OmegaConf
 from experiments.utils.train_cavs import train_cavs
+from torch.utils.data import Dataset
 from pathlib import Path
+from typing import Tuple
 from hydra.utils import get_original_cwd, instantiate
+from experiments.utils.utils import get_save_dir
+from experiments.utils.activations import extract_latents
+from experiments.model_correction.utils import load_base_model
+from utils.cav import compute_cavs
 
 log = logging.getLogger(__name__)
 
-def load_dir_model(target: str, n_concepts: int, n_features: int, state_path: Path) -> torch.nn.Module:
+def load_dir_model(target: str, state_path: Path) -> torch.nn.Module:
+    state_dict = torch.load(state_path, map_location="cpu")
+    n_concepts, n_features = state_dict["weights"].shape
     dir_model = instantiate(
         {"_target_": target},
         n_concepts=n_concepts,
@@ -20,52 +29,41 @@ def load_dir_model(target: str, n_concepts: int, n_features: int, state_path: Pa
     dir_model.eval()
     return dir_model
 
-def prepare_config(cfg: DictConfig, alpha: float) -> DictConfig:
-    cav_cfg = OmegaConf.create(
-        {
-            "experiment": {"name": cfg.experiment.name},
-            "dataset": cfg.encode.dataset,
-            "model": cfg.model,
-            "train": {
-                "learning_rate": cfg.dir_model.learning_rate,
-                "num_epochs": cfg.dir_model.n_epochs,
-                "batch_size": cfg.experiment.batch_size,
-                "num_workers": cfg.experiment.num_workers,
-                "device": cfg.experiment.device,
-                "random_seed": cfg.dir_model.random_seed,
-                "val_ratio": cfg.dir_model.val_ratio,
-                "test_ratio": cfg.dir_model.test_ratio,
-            },
-            "cav": {
-                "_target_": cfg.dir_model["_target_"],
-                "name": cfg.dir_model.name,
-                "layer": "",
-                "alpha": alpha,
-                "beta": None,
-                "n_targets": 0,
-                "optimal_init": False,
-                "exit_criterion": "auc",
-                "cav_mode": getattr(cfg.move_encs, "cav_mode", "max"),
-            },
-        }
+def load_base_cav_model(cfg: DictConfig, activations: torch.Tensor, labels: torch.Tensor) -> nn.Module:
+    cavs, bias = compute_cavs(activations, labels, type=cfg.cav.name, normalize=True)
+    dir_model = instantiate(
+        {"_target_": cfg.cav._target_},
+        n_concepts=cavs.shape[0],
+        n_features=cavs.shape[1],
+        device=cfg.train.device,
     )
+    dir_model.set_params(cavs, bias)
+    dir_model.eval()
+    return dir_model
 
-    return DictConfig(cav_cfg)
+def run_preprocessing(config: DictConfig) -> Tuple[torch.Tensor, torch.Tensor]:
+    log.info("Running preprocessing to extract activations and labels.")
+    device = torch.device(config.train.device)
+    dataset = instantiate(config.dataset)
+    num_classes = len(dataset.classes)
+    model = load_base_model(config, num_classes, device)
+    activations, labels = extract_latents(config, model, dataset)
+    return activations, labels
 
-def get_dir_model(cfg: DictConfig) -> nn.Module:
-    cache_dir = Path("results") / "clarc" / str(cfg.encode.dataset.name) / "dir_models" / str(cfg.dir_model.name)
-    alpha = cfg.dir_model.alpha
-    save_dir = cache_dir / f"alpha{alpha}"
+
+def get_dir_models(cfg: DictConfig) -> Tuple[nn.Module, nn.Module]:
+    alpha = cfg.cav.alpha
+    save_dir = get_save_dir(cfg)
     state_path = save_dir / "state_dict.pth"
 
+    activations, labels = run_preprocessing(cfg)
     if state_path.exists():
         log.info("Found cached direction model for alpha=%s in %s.", alpha, state_path)
-        dir_model = load_dir_model(cfg.dir_model["_target_"], state_path)
-        return dir_model
+        dir_model = load_dir_model(cfg.cav._target_, state_path)
+    else:
+        log.info("No cached direction model found for alpha=%s. Training new model.", alpha)
+        dir_model = train_cavs(cfg, activations, labels, save_dir)    # type: ignore
 
-    log.info("No cached direction model found for alpha=%s. Training new model.", alpha)
-    cav_cfg = prepare_config(cfg, alpha)
-    labels_clamped = labels.clamp(0)
-    dir_model = train_cavs(cav_cfg, encodings, labels_clamped, save_dir)    # type: ignore
+    base_model = load_base_cav_model(cfg, activations, labels)
 
-    return dir_model
+    return dir_model, base_model

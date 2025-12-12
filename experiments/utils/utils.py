@@ -6,25 +6,20 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Dict, List, Tuple, Optional
 from crp.attribution import CondAttribution
 from zennit.composites import EpsilonPlusFlat
+from pathlib import Path
 from datasets import get_dataset
 from models import get_fn_model_loader, get_canonizer
 from utils.visualizations import plot_training_loss, plot_metrics_over_time, plot_cosine_similarity, plot_auc_before_after, plot_uniqueness_before_after, visualize_confusion_trajectories
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
 
-
-def name_experiment(cfg: DictConfig) -> str:
-    """Create a name for the model based on the configuration."""
-    model_name = f"{cfg.dataset.name}-{cfg.model.name}-{cfg.cav.name}:alpha{cfg.cav.alpha}"
-
+def get_save_dir(cfg: DictConfig) -> Path:
+    cache_dir = Path(cfg.experiment.out)
+    model_name = f"alpha{cfg.cav.alpha}"
     if cfg.cav.beta is not None:
         model_name += f"_beta{cfg.cav.beta}_n_targets{cfg.cav.n_targets}"
-
-    if "train" in cfg.keys():
-        model_name += f"_lr{cfg.train.learning_rate}"
-
-    return model_name
-
+    model_name += f"_lr{cfg.train.learning_rate}"
+    return cache_dir / model_name
 
 def initialize_weights(C: torch.Tensor, labels: torch.Tensor, alpha: float, beta: float, n_targets: int, device: torch.device) -> torch.Tensor:
     """Initialize the weights for the orthogonality loss.
@@ -68,38 +63,38 @@ def initialize_weights(C: torch.Tensor, labels: torch.Tensor, alpha: float, beta
     return weights
 
 
-def save_results(cavs: torch.Tensor, metrics: Dict, save_dir: str) -> None:
+def save_results(cavs: torch.Tensor, metrics: Dict, save_dir: Path) -> None:
     """Save the CAVs and metrics to the specified directory."""
     cavs_normalized = cavs / torch.norm(cavs, dim=1, keepdim=True)
     torch.save(cavs_normalized, f'{save_dir}/cavs.pt')
 
-    with open(f"{save_dir}/metrics/auc_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/auc_hist.pkl", "wb") as f:
         pickle.dump(metrics['auc_hist'], f)
 
-    with open(f"{save_dir}/metrics/uniqueness_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/uniqueness_hist.pkl", "wb") as f:
         pickle.dump(metrics['uniqueness_hist'], f)
 
-    with open(f"{save_dir}/metrics/precision_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/precision_hist.pkl", "wb") as f:
         pickle.dump(metrics['precision_hist'], f)
 
-    with open(f"{save_dir}/metrics/confusion_matrix_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/confusion_matrix_hist.pkl", "wb") as f:
         pickle.dump(metrics['confusion_matrix_hist'], f)
 
-    with open(f"{save_dir}/metrics/cav_loss_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/cav_loss_hist.pkl", "wb") as f:
         pickle.dump(metrics['cav_loss_hist'], f)
 
-    with open(f"{save_dir}/metrics/orth_loss_hist.pkl", "wb") as f:
+    with open(f"{str(save_dir)}/metrics/orth_loss_hist.pkl", "wb") as f:
         pickle.dump(metrics['orth_loss_hist'], f)
 
 
-def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x_latent: torch.Tensor, labels: torch.Tensor, concepts: List, save_dir: str) -> None:
+def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x_latent: torch.Tensor, labels: torch.Tensor, concepts: List, save_dir: Path) -> None:
     """Generate and save plots for the experiment."""
-    os.makedirs(f"{save_dir}/media", exist_ok=True)
+    os.makedirs(f"{str(save_dir)}/media", exist_ok=True)
 
     plot_training_loss( 
         cav_loss_history=metrics['cav_loss_hist'], 
         orthogonality_loss_history=metrics['orth_loss_hist'], 
-        save_path=f"{save_dir}/media/training_loss.png"
+        save_path=f"{str(save_dir)}/media/training_loss.png"
     )
     
     cav_performance_history = np.mean(np.array(metrics['auc_hist']), axis=1)
@@ -112,7 +107,7 @@ def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x
         cav_uniqueness_history=cav_uniqueness_history,
         threshold=None,
         early_exit_epoch=metrics['early_exit_epoch'],
-        save_path=f"{save_dir}/media/metrics_plot.png"
+        save_path=f"{str(save_dir)}/media/metrics_plot.png"
     )
 
     cavs_normalized = cavs / torch.norm(cavs, dim=1, keepdim=True)
@@ -123,7 +118,7 @@ def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x
         cos_sim_matrix_original=cos_sim_matrix_original,
         cos_sim_matrix=cos_sim_matrix,
         concepts=concepts,  # List of concept names
-        save_path=f"{save_dir}/media/cos_sim_before_after.png"
+        save_path=f"{str(save_dir)}/media/cos_sim_before_after.png"
     )
 
     auc_before = compute_auc_performance(cavs_original, x_latent, labels)
@@ -137,7 +132,7 @@ def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x
         auc_before=sorted_auc_before,
         auc_after=sorted_auc_after,
         concepts=sorted_concepts_auc,  # List of concept names
-        save_path=f"{save_dir}/media/auc_before_after.png"
+        save_path=f"{str(save_dir)}/media/auc_before_after.png"
     )
 
     uniqueness_before = get_uniqueness(cos_sim_matrix_original)
@@ -153,7 +148,7 @@ def save_plots(cavs: torch.Tensor, cavs_original: torch.Tensor, metrics: Dict, x
         uniqueness_before=sorted_uniqueness_before,
         uniqueness_after=sorted_uniqueness_after,
         concepts=sorted_concepts_unq, 
-        save_path=f"{save_dir}/media/uniqueness_before_after.png"
+        save_path=f"{str(save_dir)}/media/uniqueness_before_after.png"
     )
 
     visualize_confusion_trajectories(metrics['confusion_matrix_hist'], save_path=f"{save_dir}/media/confusion_trajectories.png")

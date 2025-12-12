@@ -8,8 +8,7 @@ from tqdm import tqdm
 
 from datasets import get_dataset, get_dataset_kwargs
 from datasets.celeba.artificial_artifact import get_artifact_kwargs
-from experiments.model_correction import get_correction_method
-from utils.metrics import get_accuracy, get_f1, get_auc_label, get_fnr_label, get_fpr_label
+from utils.metrics import get_accuracy_mc, get_f1_mc, get_auc_label, get_fnr_label, get_fpr_label
 
 from sklearn.metrics import confusion_matrix
 
@@ -54,11 +53,11 @@ def compute_model_scores(
     return model_outs, y_true
 
 def compute_metrics(model_outs, y_true, classes=None, prefix="", suffix="", return_cm=False):
-    accuracy, standard_err = get_accuracy(model_outs, y_true, se=True)
+    accuracy, standard_err = get_accuracy_mc(model_outs, y_true, se=True)
     results = {
         f"{prefix}accuracy{suffix}": accuracy,
         f"{prefix}accuracy_standard_err{suffix}": standard_err,
-        f"{prefix}f1{suffix}": get_f1(model_outs, y_true)
+        f"{prefix}f1{suffix}": get_f1_mc(model_outs, y_true)
     }
 
     cm = confusion_matrix(y_true, model_outs.argmax(1))
@@ -102,21 +101,26 @@ def evaluate_by_subset_attacked(config: DictConfig, model: nn.Module, dataset: D
     """
 
     legacy_cfg = _legacy_config_view(config)
-    device = config.experiment.device
+    device = config.train.device
     dataset_name = legacy_cfg.get("dataset_name", config.dataset.name)
 
     data_paths = legacy_cfg.get("data_paths", config.dataset.data_paths)
-    batch_size = config.experiment.batch_size
+    batch_size = config.train.batch_size
     img_size = legacy_cfg.get("image_size", config.dataset.image_size)
     artifact_type = legacy_cfg.get("artifact_type", getattr(config.dataset, "artifact_type", None))
     binary_target = legacy_cfg.get("binary_target", getattr(config.dataset, "binary_target", None))
     artifact_kwargs = get_artifact_kwargs(legacy_cfg)
     dataset_specific_kwargs = get_dataset_kwargs(legacy_cfg)   
+    idxs_train, idxs_val, idxs_test = dataset.do_train_val_test_split(  # type: ignore
+        val_split=config.train.val_ratio,
+        test_split=config.train.test_ratio,
+        seed=config.train.random_seed
+    )
         
     sets = {
-        'train': dataset.idxs_train,    # type: ignore
-        'val': dataset.idxs_val,        # type: ignore
-        'test': dataset.idxs_test,      # type: ignore
+        'train': idxs_train,    # type: ignore
+        'val': idxs_val,        # type: ignore
+        'test': idxs_test,      # type: ignore
     }
 
     dataset_clean = get_dataset(dataset_name)(data_paths=data_paths,
@@ -162,8 +166,6 @@ def evaluate_by_subset_attacked(config: DictConfig, model: nn.Module, dataset: D
 
         dl_attacked = DataLoader(dataset_attacked_split, batch_size=batch_size, shuffle=False)
         model_outs_attacked, y_true_attacked = compute_model_scores(model, dl_attacked, device)
-
-        
 
         classes = dataset.classes   # type: ignore
 

@@ -8,6 +8,7 @@ from skimage.filters import threshold_otsu
 def get_localizations(x, cav, attribution, composite, config, device):
     _config = copy.deepcopy(config)
     _config["cav_mode"] = "cavs_full"
+    _config["device"] = device
     act = get_features(x.to(device), _config, attribution).detach()
     init_rel = (act.clamp(min=0) * cav[..., None, None].to(device)).to(device)
     attr = attribution(x.to(device).requires_grad_(), [{}], composite, start_layer=config["layer_name"], init_rel=init_rel)

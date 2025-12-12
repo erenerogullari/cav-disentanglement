@@ -20,31 +20,21 @@ from models import get_canonizer
 from sklearn.metrics import jaccard_score
 from zennit.composites import EpsilonPlusFlat
 
-from experiments.model_correction.utils import first_config_value, get_model_name, load_base_model
+from experiments.model_correction.utils import load_base_model
 from experiments.utils.activations import extract_latents
-from experiments.utils.utils import name_experiment
+from experiments.utils.utils import get_save_dir
 from utils.cav import compute_cavs
 from utils.localization import get_localizations, binarize_heatmaps
+from datasets import get_dataset
 
 log = logging.getLogger(__name__)
 
 
-def _compute_baseline_cavs(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> torch.Tensor:
-    latents, targets = extract_latents(cfg, model, dataset)
-    cavs, _ = compute_cavs(latents, targets, type=cfg.cav.name, normalize=True)
-    return cavs
-
-
 def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
-    artifact_keys = first_config_value(
-        cfg, ["correction.heatmap_artifacts", "heatmap_artifacts"], default=["timestamp", "box"]
-    )
-    if not isinstance(artifact_keys, list) or len(artifact_keys) == 0:
-        artifact_keys = ["timestamp", "box"]
-    mapping = getattr(dataset, "sample_ids_by_artifact", {}) or {}
+    artifact_keys = cfg.heatmaps.artifacts
     selected_ids = None
     for key in artifact_keys:
-        ids = mapping.get(key)
+        ids = dataset.sample_ids_by_artifact.get(key)
         if ids is None:
             continue
         ids_np = np.array(ids)
@@ -58,32 +48,21 @@ def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
 
 
 def evaluate_concept_heatmaps(
-    cfg: DictConfig,
-    cav_model: nn.Module,
-    num_imgs: int = 16,
-    cav_type: str = "best",
-) -> None:
-    device = torch.device(cfg.experiment.device)
-    dataset = instantiate(cfg.dataset)
-    classification_model = load_base_model(cfg, dataset, device)
-    cavs_baseline = _compute_baseline_cavs(cfg, classification_model, dataset)
-    cavs_orthogonal, _ = cav_model.get_params()
+    cfg: DictConfig, cav_model: nn.Module, base_model:nn.Module, num_imgs: int = 16) -> None:
+    device = torch.device(cfg.train.device)
+    dataset = get_dataset(cfg.dataset.name + "_hm")(**cfg.dataset)
+    classification_model = load_base_model(cfg, dataset.num_classes, device)
+    cavs_baseline, _ = base_model.get_params()   # type: ignore
+    cavs_orthogonal, _ = cav_model.get_params() # type: ignore
     cav_sets = {
-        "Baseline": cavs_baseline,
+        "Baseline": cavs_baseline.cpu(),
         "Orthogonal": cavs_orthogonal.cpu(),
     }
     concept_names = dataset.get_concept_names()
-    concepts_to_plot = first_config_value(
-        cfg, ["correction.heatmap_concepts", "heatmap_concepts"], default=["box", "timestamp", "Blond_Hair"]
-    )
-    available_concepts = {
-        cname: concept_names.index(cname)
-        for cname in concepts_to_plot
-        if cname in concept_names
-    }
-    if not available_concepts:
-        log.warning("None of the requested concepts (%s) exist in the dataset.", concepts_to_plot)
-        return
+    concepts_to_plot = cfg.heatmaps.concepts
+    for cname in concepts_to_plot:
+        if cname not in concept_names:
+            log.warning(f"Concept {cname} not found in dataset concepts. Available concepts: {concept_names}")
 
     sample_ids = _select_heatmap_samples(dataset, cfg)
     if len(sample_ids) == 0:
@@ -91,12 +70,12 @@ def evaluate_concept_heatmaps(
         return
     ds_subset = dataset.get_subset_by_idxs(sample_ids.tolist())
     attribution = CondAttribution(classification_model)
-    canonizers = get_canonizer(get_model_name(cfg))
+    canonizers = get_canonizer(cfg.model.name)
     composite = EpsilonPlusFlat(canonizers)
 
-    results_dir = Path("results") / "clarc" / name_experiment(cfg)
-    media_dir = results_dir / "media"
-    metrics_dir = results_dir / "metrics"
+    save_dir = get_save_dir(cfg)
+    media_dir = save_dir / "media"
+    metrics_dir = save_dir / "metrics"
     media_dir.mkdir(parents=True, exist_ok=True)
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,7 +83,7 @@ def evaluate_concept_heatmaps(
     imgs = None
     gts = None
     for name, cavs in cav_sets.items():
-        cav_subset = {cname: cavs[idx] for cname, idx in available_concepts.items()}
+        cav_subset = {cname: cavs[concept_names.index(cname), :] for cname in concepts_to_plot}
         imgs, localizations, gts = compute_concept_relevances(
             attribution,
             ds_subset,
@@ -112,15 +91,15 @@ def evaluate_concept_heatmaps(
             composite,
             cfg,
             device,
-            batch_size=cfg.experiment.batch_size,
+            batch_size=cfg.train.batch_size,
         )
-        cav_localizations[name] = localizations
+        cav_localizations[name] = localizations        # type: ignore
 
     if imgs is None or gts is None:
         log.warning("Failed to compute heatmaps due to missing ground-truth annotations.")
         return
 
-    savepath = media_dir / f"concept_heatmaps_{cav_type}"
+    savepath = media_dir / f"concept_heatmaps"
     create_plot(dataset, imgs[: min(len(imgs), num_imgs)], cav_localizations, gts["timestamp"], gts["box"], savepath)
 
     results_quant = {}
@@ -135,18 +114,18 @@ def evaluate_concept_heatmaps(
                 jaccard_score(loc_binary[i].reshape(-1).numpy(), gts[cname][i].reshape(-1).numpy())
                 for i in range(len(loc_binary))
             ])
-            results_quant[f"iou_{cname}_{cav_name}_{cav_type}"] = jaccards.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}_{cav_type}"] = concept_rel.mean().item()
+            results_quant[f"iou_{cname}_{cav_name}"] = jaccards.mean()
+            results_quant[f"concept_rel_{cname}_{cav_name}"] = concept_rel.mean().item()
 
     data_plot = pd.DataFrame(data=[
-        ("Baseline", results_quant.get(f"concept_rel_timestamp_Baseline_{cav_type}", 0.0)),
-        ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal_{cav_type}", 0.0)),
+        ("Baseline", results_quant.get(f"concept_rel_timestamp_Baseline", 0.0)),
+        ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0)),
     ], columns=["CAV", "Concept Relevance"])
     vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
-    savepath_quant = media_dir / f"concept_relevance_{cav_type}"
+    savepath_quant = media_dir / f"concept_relevance"
     plot_concept_relevance(data_plot, vmax, savepath_quant)
 
-    with open(metrics_dir / f"concept_relevance_{cav_type}.pkl", "wb") as f:
+    with open(metrics_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
 
 
@@ -160,9 +139,7 @@ def plot_concept_relevance(data_plot: pd.DataFrame, vmax: float, savename: Path)
         ticks.append(0.5)
     plt.ylim(0.25, vmax)
     plt.yticks(ticks)
-    plt.show()
-    [fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500) for ending in ["png", "jpg", "pdf"]]
-    plt.close()
+    [fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500) for ending in ["png", "pdf"]]
 
 
 def compute_concept_relevances(
@@ -176,7 +153,7 @@ def compute_concept_relevances(
 ):
     localizations = {c: None for c in cavs.keys()}
     gts = {"timestamp": None, "box": None}
-    layer_name = first_config_value(cfg, ["cav.layer", "correction.layer"], default=cfg.cav.layer)
+    layer_name = cfg.cav.layer
     hm_config = {"layer_name": layer_name}
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
     imgs = None
@@ -251,4 +228,4 @@ def create_plot(ds, imgs, cav_localizations, gt_timestamp, gt_box, savepath: Pat
             ax.set_yticks([])
 
     log.info("Storing heatmaps at %s", savepath)
-    [fig.savefig(f"{savepath}.{ending}", bbox_inches="tight") for ending in ["jpg", "pdf"]]
+    [fig.savefig(f"{savepath}.{ending}", bbox_inches="tight") for ending in ["png", "pdf"]]

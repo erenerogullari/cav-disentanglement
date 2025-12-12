@@ -3,21 +3,20 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
-from datasets.celeba.celeba import CelebADataset, celeba_augmentation
-from datasets.celeba.artificial_artifact import insert_artifact
-import logging
 
-log = logging.getLogger(__name__)
+from datasets.celeba.celeba import FN_NORMALIZE_CELEBA, CelebADataset, celeba_augmentation
+from utils.artificial_artifact import insert_artifact
+# from utils.plots import visualize_dataset
 
 def get_celeba_attacked_dataset(data_paths, normalize_data=True, image_size=224, attacked_classes=[], 
                        p_artifact=.5, artifact_type='ch_text', **kwargs):
     fns_transform = [
-        T.Resize((image_size, image_size), interpolation=T.InterpolationMode.BICUBIC),
+        T.Resize((image_size, image_size), interpolation=T.functional.InterpolationMode.BICUBIC),
         T.ToTensor()
     ]
 
     if normalize_data:
-        fns_transform.append(T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]))
+        fns_transform.append(FN_NORMALIZE_CELEBA)
 
     transform = T.Compose(fns_transform)
 
@@ -38,7 +37,7 @@ class CelebAAttackedDataset(CelebADataset):
         super().__init__(data_paths, transform, augmentation, None)
 
         self.image_size = image_size
-        self.transform_resize = T.Resize((image_size, image_size), interpolation=T.InterpolationMode.BICUBIC)
+        self.transform_resize = T.Resize((image_size, image_size), interpolation=T.functional.InterpolationMode.BICUBIC)
 
         ## art1 dependant on target (spurious correlation)
         p_art1_base = 0.005
@@ -75,11 +74,12 @@ class CelebAAttackedDataset(CelebADataset):
         self.clean_sample_ids = [i for i in range(len(self)) if i not in self.artifact_ids_union]
 
         for concept, sample_ids in self.sample_ids_by_artifact.items():
-            log.info(f"Adding concept {concept} into metadata.")
+            print(f"Adding concept {concept}")
             self.metadata[concept] = 0
-            self.metadata.loc[sample_ids, concept] = 1      # type: ignore
+            self.metadata.loc[sample_ids, concept] = 1
             
-        log.info(f"Inserted artifacts: timestamp ({self.art1_labels.sum()}) / box ({self.art2_labels.sum()})")
+        print(f"Inserting artifacts: {self.art1_labels.sum()} / {self.art2_labels.sum()}")
+        print("Done.")
 
     def add_artifact(self, img, idx, artifact_type, **artifact_kwargs):
         random.seed(idx)
@@ -106,11 +106,11 @@ class CelebAAttackedDataset(CelebADataset):
             image = self.transform(image)
 
         if self.do_augmentation:
-            image = self.augmentation(image) # type: ignore
+            image = self.augmentation(image)
 
-        return image.float(), target # type: ignore
+        return image.float(), target
 
-    # Overrides
+
     def get_subset_by_idxs(self, idxs):
         subset = super().get_subset_by_idxs(idxs)
         subset.art1_labels = self.art1_labels[np.array(idxs)]
@@ -123,33 +123,12 @@ class CelebAAttackedDataset(CelebADataset):
         subset.artifact_ids_union = np.union1d(subset.art1_ids, subset.art2_ids)
         subset.clean_sample_ids = [i for i in range(len(subset)) if i not in subset.artifact_ids_union]
         return subset
-    
-    def get_labels(self):
-        base_labels = super().get_labels()                     # shape [N, 40]
-        attack_cols = torch.tensor(
-            self.metadata[["timestamp", "box"]].to_numpy(),
-            dtype=base_labels.dtype,
-        )
-        return torch.cat([base_labels, attack_cols], dim=1)    # shape [N, 42]
 
-    def get_concept_names(self):
-        concept_names = super().get_concept_names()
-        if "timestamp" not in concept_names:
-            concept_names = concept_names + ["timestamp", "box"]
-        return concept_names
-
-if __name__ == "__main__":
-    import torchvision
-    logging.basicConfig(level=logging.INFO)
-    data_paths = ["/Users/erogullari/datasets/"]
-    ds = get_celeba_attacked_dataset(data_paths, 
-                                     normalize_data=True, 
-                                     image_size=224, 
-                                     attacked_classes=[1], 
-                                     p_artifact=1, 
-                                     artifact_type="ch_time",
-                                     entanglement_factor=10
-                                    )
-    for i in range(20):
-        img, _ = ds[i]
-        torchvision.utils.save_image(ds.reverse_normalization(img).float() / 255.0, f"DELETE/celeba_attacked/celeba_sample{i}.png")
+# if __name__ == "__main__":
+#     ds = get_celeba_dataset(["/media/pahde/Data/celeba/"],
+#                                attacked_classes=[1],
+#                                p_artifact=1,
+#                                artifact_type="ch_time")
+#     ds[0]
+#     visualize_dataset(ds, "dataset.png", 0)
+#     print("Loaded data")

@@ -30,6 +30,20 @@ def get_accuracy(y_hat, y, se=False):
     
     return accuracy
 
+def get_accuracy_mc(y_hat, y, se=False):
+    if y.dim() == 2:
+        accuracy = ((y_hat.sigmoid() >.5).long() == y).float().mean().item()
+    else:
+        accuracy = (y_hat.argmax(dim=1) == y).sum().item() * 1.0 / len(y)
+    if se:
+        se = np.sqrt(accuracy * (1 - accuracy) / len(y))
+        return accuracy, se
+    return accuracy
+
+def get_f1_mc(y_hat, y):
+    pred = (y_hat.sigmoid() >.5).long()if y.dim() == 2 else y_hat.argmax(dim=1)
+    return f1_score(pred.detach().cpu(), y.detach().cpu(), average='macro')
+
 
 def get_f1(y_hat, y):
     """

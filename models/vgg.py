@@ -39,7 +39,7 @@ def get_vgg(model_fn, ckpt_path=None, pretrained=True, n_class: int = None) -> t
     if n_class and n_class != 1000:
         model.classifier[-1] = torch.nn.Linear(4096, n_class, bias=True)
     if ckpt_path:
-        checkpoint = torch.load(ckpt_path, weights_only=True)
+        checkpoint = torch.load(ckpt_path, weights_only=True, map_location="cpu")
         if "state_dict" in checkpoint:
             checkpoint = checkpoint["state_dict"]
         elif "model_state_dict" in checkpoint:
