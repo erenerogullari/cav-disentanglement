@@ -5,95 +5,65 @@ import h5py
 import numpy as np
 import torch
 from zennit.core import stabilize
-
 from experiments.model_correction.base_correction import LitClassifier, Freeze
+from experiments.model_correction.base_correction import Vanilla
+from pathlib import Path
 from utils.cav import compute_cav
+import logging 
 
-
-# TODO: Inegrate this into repo
+log = logging.getLogger(__name__)
 
 class Clarc(LitClassifier):
-    def __init__(self, model, config, **kwargs):
+    def __init__(self, model, config, cav, **kwargs):
         super().__init__(model, config, **kwargs)
 
         self.std = None
         self.layer_name = config["layer_name"]
         self.dataset_name = config["dataset_name"]
-        self.cav_scope = config["cav_scope"]
         self.model_name = config["model_name"]
+        self.mode = config["mode"]
 
         assert "artifact_sample_ids" in kwargs.keys(), "artifact_sample_ids have to be passed to ClArC correction methods"
         assert "sample_ids" in kwargs.keys(), "all sample_ids have to be passed to ClArC correction methods"
-        assert "mode" in kwargs.keys(), "mode has to be passed to ClArC correction methods"
 
         self.artifact_sample_ids = kwargs["artifact_sample_ids"]
         self.sample_ids = kwargs["sample_ids"]
         self.classes = kwargs.get("classes", None)
-
         self.direction_mode = config["direction_mode"]
-        self.mode = kwargs['mode']
 
-        print(f"Using {len(self.artifact_sample_ids)} artifact samples.")
+        log.info(f"Using {len(self.artifact_sample_ids)} artifact samples.")
+        self.path = Path(config['dir_precomputed_data']) / f"{self.layer_name}.pth"
 
-        artifact_type = config.get('artifact_type', None)
-        artifact_extension = f"_{artifact_type}-{config['p_artifact']}" if artifact_type else ""
-        artifact_extension += f"-{config['lsb_factor']}" if artifact_type == "lsb" else ""
-        artifact_extension += "_bd" if config.get("use_backdoor_model", False) else ""
-        self.path = f"{config['dir_precomputed_data']}/global_relevances_and_activations/{self.dataset_name}{artifact_extension}/{self.model_name}"
-
-        cav, mean_length, mean_length_targets = self.compute_cav(self.mode, norm=False)
-        
         self.cav = cav
+        mean_length, mean_length_targets = self.compute_means(norm=False)
         self.mean_length = mean_length
         self.mean_length_targets = mean_length_targets
         hooks = []
         for n, m in self.model.named_modules():
             if n == self.layer_name:
-                print("Registered forward hook.")
+                log.info("Registered forward hook.")
                 hooks.append(m.register_forward_hook(self.clarc_hook))
         self.hooks = hooks
 
-    def compute_cav(self, mode, norm=False):
-        vecs = []
-        sample_ids = []
-
-        path = self.path
-        cav_scope = self.cav_scope or range(len(self.classes))
-
-        for class_id in cav_scope:
-            path_precomputed_activations = f"{path}/class_{class_id}_all.hdf5"
-            print(f"reading precomputed relevances/activations from {path_precomputed_activations}")
-
-            data = torch.tensor(np.array(h5py.File(path_precomputed_activations)[self.layer_name][mode]))
-            
-            if len(data) > 0:
-                sample_ids += torch.load(f"{path}/class_{class_id}_all_meta.pth", weights_only=False)["samples"]
-                vecs.append(data)
-
-        vecs = torch.cat(vecs, 0)
-        sample_ids = np.array(sample_ids)
+    def compute_means(self, norm=False):
+        variables = torch.load(self.path)
+        vecs = variables["encs"]
+        labels = variables["labels"]
 
         # Only keep samples that are in self.sample_ids (usually training set)
-        all_sample_ids = np.array(self.sample_ids)
-        filter_sample = np.array([id in all_sample_ids for id in sample_ids])
-        vecs = vecs[filter_sample]
-        sample_ids = sample_ids[filter_sample]
+        vecs = vecs[self.sample_ids].to(self.cav.device)
+        labels = labels[self.sample_ids]
 
         target_ids = np.array(
-            [np.argwhere(sample_ids == id_)[0][0] for id_ in self.artifact_sample_ids if
-             np.argwhere(sample_ids == id_).any()])
-        targets = np.array([1 * (j in target_ids) for j, x in enumerate(sample_ids)])
-        X = vecs.detach().cpu().numpy()
-        X = X.reshape(X.shape[0], -1)
-        # TODO: Generalize this to work with multi_cavs
-        cav = compute_cav(
-            X, targets, cav_type=self.direction_mode
-        )
+            [np.argwhere(self.sample_ids == id_)[0][0] for id_ in self.artifact_sample_ids if
+             np.argwhere(self.sample_ids == id_).any()])
+        targets = np.array([1 * (j in target_ids) for j, x in enumerate(self.sample_ids)])
+        mean_length = (vecs[targets == 0].flatten(start_dim=1)  * self.cav).sum(1).mean(0)
+        mean_length_targets = (vecs[targets == 1].flatten(start_dim=1) * self.cav).sum(1).mean(0)
 
-        mean_length = (vecs[targets == 0].flatten(start_dim=1)  * cav).sum(1).mean(0)
-        mean_length_targets = (vecs[targets == 1].flatten(start_dim=1) * cav).sum(1).mean(0)
+        return mean_length, mean_length_targets
+        
 
-        return cav, mean_length, mean_length_targets
 
     def clarc_hook(self, m, i, o):
         pass
@@ -105,19 +75,18 @@ class Clarc(LitClassifier):
 
 
 class PClarc(Clarc):
-    def __init__(self, model, config, **kwargs):
-        super().__init__(model, config, **kwargs)
+    def __init__(self, model, config, cav, **kwargs):
+        super().__init__(model, config, cav, **kwargs)
 
         if os.path.exists(self.path):
-            print("Computing CAV.")
-            cav, mean_length, mean_length_targets = self.compute_cav(self.mode)
             self.cav = cav
+            mean_length, mean_length_targets = self.compute_means(norm=False) 
             self.mean_length = mean_length
             self.mean_length_targets = mean_length_targets
         else:
             if self.hooks and not kwargs.get("eval_mode", False):
                 for hook in self.hooks:
-                    print("Removed hook. No hook should be active for training.")
+                    log.info("Removed hook. No hook should be active for training.")
                     hook.remove()
                 self.hooks = []
 
@@ -132,14 +101,15 @@ class PClarc(Clarc):
             outs = outs[..., None]
 
         cav = self.cav.to(outs)
-        if self.mode == "cavs_full":
+        if self.mode == "full":
             length = (outs.flatten(start_dim=1) * cav).sum(1)
         else:
             length = (outs.flatten(start_dim=2).max(2).values * cav).sum(1)
         v = self.cav.to(outs)
-        beta = (cav * v).sum(1)
+        dim = 0 if cav.dim() == 1 else 1
+        beta = (cav * v).sum(dim)
         mag = (self.mean_length - length).to(outs) / stabilize(beta)
-        v = v.reshape(1, *outs.shape[1:]) if self.mode == "cavs_full" else v[..., None, None]
+        v = v.reshape(1, *outs.shape[1:]) if self.mode == "full" else v[..., None, None]
         addition = (mag[:, None, None, None] * v)
         acts = outs + addition
         if dim_orig == 2:
@@ -149,15 +119,15 @@ class PClarc(Clarc):
         return acts
 
 class ReactivePClarc(PClarc):
-    def __init__(self, model, config, **kwargs):
-        super().__init__(model, config, **kwargs)
+    def __init__(self, model, config, cav, **kwargs):
+        super().__init__(model, config, cav, **kwargs)
 
         true_direction = self.config["direction_mode"]
         self.direction_mode = "svm"
-        cav_svm, _, _ = self.compute_cav(self.mode, norm=False)
+        cav_svm, _, _ = self.compute_svm_cav(self.mode)
         self.cav_svm = cav_svm
         self.direction_mode = true_direction
-        print("computed SVM-CAV for condition")
+        log.info("computed SVM-CAV for condition")
 
     def clarc_hook(self, m, i, o):
         outs = o + 0
@@ -170,14 +140,15 @@ class ReactivePClarc(PClarc):
             outs = outs[..., None]
         # outs = outs[..., None, None] if is_2dim else outs
         cav = self.cav.to(outs)
-        if self.mode == "cavs_full":
+        if self.mode == "full":
             length = (outs.flatten(start_dim=1) * cav).sum(1)
         else:
             length = (outs.flatten(start_dim=2).max(2).values * cav).sum(1)
         v = self.cav.to(outs)
-        beta = (cav * v).sum(1)
+        dim = 0 if cav.dim() == 1 else 1
+        beta = (cav * v).sum(dim)
         mag = (self.mean_length - length).to(outs) / stabilize(beta)
-        v = v.reshape(1, *outs.shape[1:]) if self.mode == "cavs_full" else v[..., None, None]
+        v = v.reshape(1, *outs.shape[1:]) if self.mode == "full" else v[..., None, None]
         addition = (mag[:, None, None, None] * v)
 
         ## implement condition
@@ -190,10 +161,28 @@ class ReactivePClarc(PClarc):
         elif dim_orig == 3:
             acts = acts.squeeze(-1)
         return acts
+    
+    def compute_svm_cav(self, mode):
+        variables = torch.load(self.path)
+        vecs = variables["encs"]
+        labels = variables["labels"]
+
+        # Only keep samples that are in self.sample_ids (usually training set)
+        vecs = vecs[self.sample_ids]
+        labels = labels[self.sample_ids]
+
+        target_ids = np.array(
+            [np.argwhere(self.sample_ids == id_)[0][0] for id_ in self.artifact_sample_ids if
+             np.argwhere(self.sample_ids == id_).any()])
+        targets = np.array([1 * (j in target_ids) for j, x in enumerate(self.sample_ids)])
+        
+        cav_svm, _ = compute_cav(vecs.numpy(), targets, cav_type="svm")
+
+        return cav_svm, vecs, targets
 
 class AClarc(Clarc):
-    def __init__(self, model, config, **kwargs):
-        super().__init__(model, config, **kwargs)
+    def __init__(self, model, config, cav, **kwargs):
+        super().__init__(model, config, cav, **kwargs)
         self.lamb = self.config["lamb"] 
 
     def clarc_hook(self, m, i, o):
@@ -201,16 +190,32 @@ class AClarc(Clarc):
         is_2dim = outs.dim() == 2
         outs = outs[..., None, None] if is_2dim else outs
         cav = self.cav.to(outs)
-        if self.mode == "cavs_full":
+        if self.mode == "full":
             length = (outs.flatten(start_dim=1) * cav).sum(1)
         else:
             length = (outs.flatten(start_dim=2).max(2).values * cav).sum(1)
         v = self.cav.to(outs)
-        beta = (cav * v).sum(1)
+        dim = 0 if cav.dim() == 1 else 1
+        beta = (cav * v).sum(dim)
         mag = (self.mean_length_targets - length).to(outs) / stabilize(beta)
-        v = v.reshape(1, *outs.shape[1:]) if self.mode == "cavs_full" else v[..., None, None]
+        v = v.reshape(1, *outs.shape[1:]) if self.mode == "full" else v[..., None, None]
 
         addition = (mag[:, None, None, None] * v).requires_grad_()
         acts = outs + addition
         acts = acts.squeeze(-1).squeeze(-1) if is_2dim else acts
         return acts
+
+
+def get_correction_method(method_name):
+    CORRECTION_METHODS = {
+        'Vanilla': Vanilla,
+        'Clarc': Clarc,
+        'AClarc': AClarc,
+        'PClarc': PClarc,
+        'ReactivePClarc': ReactivePClarc
+
+    }
+
+    assert method_name in CORRECTION_METHODS.keys(), f"Correction method '{method_name}' unknown," \
+                                                     f" choose one of {list(CORRECTION_METHODS.keys())}"
+    return CORRECTION_METHODS[method_name]

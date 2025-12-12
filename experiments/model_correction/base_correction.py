@@ -5,6 +5,9 @@ from pytorch_lightning.callbacks import Callback
 from utils.layer_names import get_lnames_sorted
 from utils.training_utils import get_optimizer, get_loss
 from utils.metrics import get_accuracy, get_f1, get_auc
+import logging
+
+log = logging.getLogger(__name__)
 
 class LitClassifier(pl.LightningModule):
     def __init__(self, model, config, **kwargs):
@@ -108,7 +111,7 @@ class Freeze(Callback):
         return False
 
     def on_train_epoch_start(self, trainer, pl_module):
-        print(f"Freezing conv+bn layers. Up to {self.stop_at_layer}")
+        log.info(f"Freezing conv+bn layers. Up to {self.stop_at_layer}")
         lnames_sorted = get_lnames_sorted(pl_module.model)
         for n, m in pl_module.model.named_modules():    # type: ignore
             freeze_layer = lnames_sorted.index(self.stop_at_layer) >= lnames_sorted.index(n)        # type: ignore
@@ -116,7 +119,7 @@ class Freeze(Callback):
                 m.eval()
                 for p in m.parameters():
                     p.requires_grad = False
-                print(f"Freeze {n}")
+                log.info(f"Freeze {n}")
 
         ## Freeze extra ViT layers
         params_blacklist = [
@@ -129,4 +132,4 @@ class Freeze(Callback):
                 p.requires_grad = False
 
         layers_to_optimize = [n for n, m in pl_module.model.named_parameters() if m.requires_grad]    # type: ignore
-        print(f"Done. Optimizing {layers_to_optimize}")
+        log.info(f"Done. Optimizing {layers_to_optimize}")

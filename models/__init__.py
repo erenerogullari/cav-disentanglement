@@ -44,6 +44,14 @@ CANONIZERS = {
     "lenet5": get_lenet_canonizer,
 }
 
+TRANSFORMER_MODELS = [
+    "vit",
+    ]
+
+MODELS_1D = [
+    "vit", 
+    ]
+
 def get_canonizer(model_name):
     assert model_name in list(CANONIZERS.keys()), f"No canonizer for model '{model_name}' available"
     return CANONIZERS[model_name]()
