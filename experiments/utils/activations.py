@@ -35,6 +35,23 @@ def _get_features(batch, layer_name, attribution, canonizers, cav_mode, device):
         raise ValueError(f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'.")
     return features
 
+def get_features(batch, config, attribution):
+
+    batch.requires_grad = True
+    dummy_cond = [{"y": 0} for _ in range(len(batch))]
+    record_layer=[config["layer_name"]]
+    attr = attribution(batch.to(config["device"]), dummy_cond, record_layer=record_layer)
+    if config["cav_mode"] == "cavs_full":
+        features = attr.activations[config["layer_name"]]
+    else:
+        # ViT support
+        acts = attr.activations[config["layer_name"]]
+        acts = acts if acts.dim() > 2 else acts[..., None, None]
+        acts = acts.transpose(1,3).transpose(2,3) if "swin_former" in config["model_name"] else acts
+        features = acts.flatten(start_dim=2).max(2)[0]
+        # features = attr.activations[config["layer_name"]].flatten(start_dim=2).max(2)[0]
+    return features
+
 
 def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> Tuple[torch.Tensor, torch.Tensor]:
     """Extract latent representations from a specified layer of the model for the entire dataset.
