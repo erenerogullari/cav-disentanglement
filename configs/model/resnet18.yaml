@@ -1,3 +1,4 @@
 name: resnet18
-n_class: 69
+n_class: 153
 pretrained: True
+ckpt_path: "/media/erogullari/checkpoints/checkpoint_resnet18_elements.pth"

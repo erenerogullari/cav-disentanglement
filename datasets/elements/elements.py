@@ -502,13 +502,16 @@ class ElementsDataset(BaseDataset):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    from pathlib import Path
+    from omegaconf import OmegaConf
+    from hydra.utils import instantiate
 
-    correlations = [
-        {"concept_names": ["shape:triangle", "texture:stripes_horizontal"], "degree": 0.8}
-    ]
+    filename = Path("/home/erogullari/Workspace/cav-disentanglement/configs/dataset/elements_standart.yaml")
 
-    dataset = get_elements_dataset(data_paths=["."], num_samples=512, correlations=correlations)
-    dataset.do_augmentation = False
+    with open(filename, "r") as fp:
+        config = OmegaConf.load(fp)
+
+    dataset = instantiate(config)
 
     n_show = min(9, len(dataset))
     n_cols = min(3, n_show)

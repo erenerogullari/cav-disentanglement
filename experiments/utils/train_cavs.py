@@ -35,10 +35,15 @@ def seed_everything(seed: Optional[int]) -> None:
         torch.cuda.manual_seed_all(seed)
 
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
-    checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
-    return checkpoint_path
+    checkpoint_path = cfg_model.get("ckpt_path", None)
+    if checkpoint_path is None:
+        checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        log.info(f"No checkpoint path provided in config. Using default checkpoint directory: {checkpoint_dir}")
+        return checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
+    else:
+        log.info(f"Using provided checkpoint path: {checkpoint_path}")
+        return Path(checkpoint_path)
 
 def _load_model(cfg_model: DictConfig, ckpt_path: Path, device: torch.device) -> nn.Module:
     model_loader = get_fn_model_loader(cfg_model.name)
@@ -162,12 +167,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    if cfg.experiment.name == "activation_steering":
-        dataset = instantiate(cfg.dataset)
-    else:
-        dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
-                                            normalize_data=cfg.dataset.normalize_data,
-                                            image_size=cfg.dataset.image_size)
+    dataset = instantiate(cfg.dataset)
     concept_names = dataset.get_concept_names()
 
 
