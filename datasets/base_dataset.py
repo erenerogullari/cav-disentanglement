@@ -10,6 +10,8 @@ class BaseDataset(Dataset):
         self.transform = transform
         self.augmentation = augmentation
         self.do_augmentation = False
+        self.classes = None
+        self.sample_ids_by_artifact = {}
 
         self.mean = torch.Tensor((0.5, 0.5, 0.5))
         self.var = torch.Tensor((0.5, 0.5, 0.5))

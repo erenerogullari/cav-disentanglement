@@ -68,11 +68,15 @@ class CelebADataset(BaseDataset):
         
         self.metadata = pd.DataFrame(
             {'image_id': np.array(ds.filename)[filter_indices == 1], 'targets': labels})
+        attr_df = self.attributes.reset_index(drop=True).copy()
+        attr_df.columns = attr_df.columns.astype(str)
+        self.metadata = pd.concat([self.metadata.reset_index(drop=True), attr_df], axis=1)
         
         self.normalize_fn = NORMALIZATION
 
         self.classes = [f'Non-{ATTR_LABEL}', ATTR_LABEL]
         self.class_names = self.classes
+        self.num_classes = len(self.classes)
 
         self.mean = torch.Tensor([0.5, 0.5, 0.5])
         self.var = torch.Tensor([0.5, 0.5, 0.5])
@@ -111,6 +115,9 @@ class CelebADataset(BaseDataset):
     def get_target(self, i):
         target = torch.tensor(self.metadata.iloc[i]["targets"])
         return target
+    
+    def get_num_classes(self):
+        return len(self.classes)
 
     def get_subset_by_idxs(self, idxs):
         subset = copy.deepcopy(self)

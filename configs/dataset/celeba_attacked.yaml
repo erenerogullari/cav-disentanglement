@@ -1,0 +1,13 @@
+_target_: datasets.get_celeba_attacked_dataset
+data_paths: ["/Users/erogullari/datasets/"]
+normalize_data: True
+shuffle: True
+image_size: 224
+attacked_classes:
+  - 1 
+artifact: timestamp
+artifact_type: ch_time
+time_format: datetime
+p_artifact: 0.4
+entanglement_factor: 5
+name: celeba_attacked

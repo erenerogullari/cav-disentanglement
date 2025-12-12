@@ -1,0 +1,44 @@
+defaults:
+  - _self_
+  - hardware@train: local
+  - dataset: celeba_attacked
+  - model: vgg16
+  - cav_model@cav: pattern_cav
+
+experiment:
+  name: model_correction
+  out: results/${experiment.name}/${model.name}/${cav.layer}/${cav.name}
+  random_seed: 42
+
+train:
+  learning_rate: 0.0001
+  num_epochs: 200
+  val_ratio: 0.1
+  test_ratio: 0.1
+  random_seed: 42
+
+cav:
+  cav_mode: max
+  layer: features.28
+  alpha: ???
+  beta: null
+  n_targets: 0
+  optimal_init: true
+  exit_criterion: orthogonality
+
+correction:
+  method: PClarc
+  dir_precomputed_data: variables/${dataset.name}/${model.name}
+  layer_name: ${cav.layer}
+  dataset_name: ${dataset.name}
+  model_name: ${model.name}
+  direction_mode: ${cav.name}
+
+heatmaps:
+  concepts:
+    - box
+    - timestamp
+    - Blond_Hair
+  artifacts:
+    - box
+    - timestamp

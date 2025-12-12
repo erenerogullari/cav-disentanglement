@@ -38,7 +38,7 @@ def get_latent_encoding_batch(model, data, layer_name):
     
     return layer_act
 
-def _compute_cav(vecs: np.ndarray, targets: np.ndarray, cav_type: str = "svm"):
+def compute_cav(vecs: np.ndarray, targets: np.ndarray, cav_type: str = "svm"):
     """
     Compute a concept activation vector (CAV) for a set of vectors and targets.
 

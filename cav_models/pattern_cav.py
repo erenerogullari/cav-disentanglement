@@ -46,8 +46,16 @@ class PatternCAV(nn.Module):
         return self.weights[idx, :], self.bias[idx, :]
     
 
-    def get_params(self):
-        return self.weights.detach().cpu().clone(), self.bias.detach().cpu().clone()
+    def get_params(self, normalize=False):
+        weights = self.weights.detach().cpu().clone()
+        bias = self.bias.detach().cpu().clone()
+        if normalize:
+            weights = F.normalize(weights, p=2, dim=1)
+        return weights, bias
+    
+    def set_params(self, weights: torch.Tensor, bias: torch.Tensor):
+        self.weights.data = weights.to(self.weights.device)
+        self.bias.data = bias.to(self.bias.device)
 
 
     # def save_state_dict(self, dir_name):

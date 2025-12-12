@@ -13,17 +13,30 @@ import copy
 import random
 from typing import Optional, Dict, Any
 import inspect
+import random
+from typing import Optional, Dict, Any
+import inspect
 from models import get_fn_model_loader
 from datasets import get_dataset
 from utils.cav import compute_cavs
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
 from experiments.utils.utils import get_save_dir, initialize_weights, save_results, save_plots
+from experiments.utils.utils import get_save_dir, initialize_weights, save_results, save_plots
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+def seed_everything(seed: Optional[int]) -> None:
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 def seed_everything(seed: Optional[int]) -> None:
     if seed is None:
@@ -147,9 +160,13 @@ def eval_epoch(test_data, test_labels, cav_model, device):
     return metrics
 
 def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: torch.Tensor | None = None, save_dir: Path | None = None) -> nn.Module:
+def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: torch.Tensor | None = None, save_dir: Path | None = None) -> nn.Module:
     """Train CAVs with disentanglement losses.
     Args:
         cfg (DictConfig): Configuration object.
+        encodings (torch.Tensor | None): Precomputed latent encodings. If None, latents will be extracted.
+        labels (torch.Tensor | None): Corresponding labels for the encodings. If None, labels will be extracted.
+        save_dir (Path | None): Directory to save results. If None, a default path will be used.
         encodings (torch.Tensor | None): Precomputed latent encodings. If None, latents will be extracted.
         labels (torch.Tensor | None): Corresponding labels for the encodings. If None, labels will be extracted.
         save_dir (Path | None): Directory to save results. If None, a default path will be used.
@@ -165,8 +182,16 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         
     (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
     (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
+    seed_everything(cfg.train.random_seed)
+
+    if save_dir is None:
+        save_dir =  get_save_dir(cfg)
+        
+    (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
+    (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
+    dataset = instantiate(cfg.dataset)
     dataset = instantiate(cfg.dataset)
     concept_names = dataset.get_concept_names()
 
@@ -183,8 +208,21 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
         x_latent, labels = extract_latents(cfg, model, dataset)
 
+
+    if encodings is not None and labels is not None:
+        log.info("Using provided encodings and labels for CAV training.")
+        x_latent = encodings
+        labels = labels
+    else:
+        log.info("No encodings provided. Extracting latents from model and dataset.")
+        log.info(f"Loading model: {cfg.model.name}")
+        ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
+        model = _load_model(cfg.model, ckpt_path, device)
+        log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
+        x_latent, labels = extract_latents(cfg, model, dataset)
+
     n_concepts, n_features = labels.shape[1], x_latent.shape[1]
-    train_latents, train_labels, val_latents, val_labels, test_latents, test_labels = train_test_split(cfg, dataset, x_latent, labels)
+    train_latents, train_labels, test_latents, test_labels = train_test_split(x_latent, labels, cfg.train.train_ratio)
     train_dataset = TensorDataset(train_latents, train_labels)
     train_loader = DataLoader(train_dataset, batch_size=cfg.train.batch_size, shuffle=True, num_workers=cfg.train.num_workers)
 
@@ -193,6 +231,8 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
     cav_cfg = {"_target_": raw_cav_cfg["_target_"]} # type: ignore
     cavs_original, bias_original = compute_cavs(train_latents, train_labels, type=cfg.cav.name, normalize=True)
+    cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu")
+
     cav_model = instantiate(cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu")
 
     if cfg.cav.optimal_init:
@@ -223,6 +263,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         # Evaluation every 10 epochs
         if epoch % 10 == 0:
             metrics = eval_epoch(val_latents, val_labels, cav_model, device)
+            metrics = eval_epoch(val_latents, val_labels, cav_model, device)
             auc_scores_history.append(metrics['auc_scores'])
             uniqueness_history.append(metrics['uniqueness'])
             avg_precision_hist.append(metrics['avg_precision'])
@@ -251,6 +292,12 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     else:
         log.info("No early exit criterion specified, using final epoch CAVs.")
         best_cavs = copy.deepcopy(cav_model).to("cpu")
+    log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
+    if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
+        log.info(f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}")
+    else:
+        log.info("No early exit criterion specified, using final epoch CAVs.")
+        best_cavs = copy.deepcopy(cav_model).to("cpu")
 
     # Save the results
     log.info(f"Training completed. Saving results to {save_dir}.")
@@ -264,7 +311,9 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         'early_exit_epoch':  early_exit_epoch,
     }
     save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)   
+    save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)   
     save_plots(best_cavs.get_params()[0].detach(), cavs_original, final_metrics, x_latent, labels, concept_names, save_dir)
     torch.save(best_cavs.state_dict(), os.path.join(save_dir, 'state_dict.pth'))
 
     return best_cavs
+

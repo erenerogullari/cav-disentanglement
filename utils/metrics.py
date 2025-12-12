@@ -30,6 +30,20 @@ def get_accuracy(y_hat, y, se=False):
     
     return accuracy
 
+def get_accuracy_mc(y_hat, y, se=False):
+    if y.dim() == 2:
+        accuracy = ((y_hat.sigmoid() >.5).long() == y).float().mean().item()
+    else:
+        accuracy = (y_hat.argmax(dim=1) == y).sum().item() * 1.0 / len(y)
+    if se:
+        se = np.sqrt(accuracy * (1 - accuracy) / len(y))
+        return accuracy, se
+    return accuracy
+
+def get_f1_mc(y_hat, y):
+    pred = (y_hat.sigmoid() >.5).long()if y.dim() == 2 else y_hat.argmax(dim=1)
+    return f1_score(pred.detach().cpu(), y.detach().cpu(), average='macro')
+
 
 def get_f1(y_hat, y):
     """
@@ -258,3 +272,35 @@ def get_auconf(
     cm_integral = np.trapz(cms, thr_np, axis=0)  # area under each entry‑curve
 
     return cm_integral
+
+
+def calculate_metrics(cm):
+    tn, fp, fn, tp = cm.ravel()
+    accuracy = (tp + tn) / (tp + tn + fp + fn)
+    false_positive_rate = fp / (fp + tn)
+    false_negative_rate = fn / (fn + tp)
+    recall = tp / (tp + fn)
+    precision = tp / (tp + fp)
+    return accuracy, false_positive_rate, false_negative_rate, recall, precision
+
+
+def get_auc_label(y_true, model_outs, label):
+    if y_true.dim() == 2:
+        fpr, tpr, _ = roc_curve(y_true.numpy()[:,label], model_outs.numpy()[:,label])
+    else:
+        fpr, tpr, _ = roc_curve(y_true.numpy(), model_outs.numpy()[:, label], pos_label=label)
+    return auc(fpr, tpr)
+
+def get_fpr_label(y_true, model_preds, label):
+    cm = confusion_matrix(y_true[:,label], model_preds[:,label], labels=(0,1))
+    fp = cm[0, 1]
+    tn = cm[0, 0]
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+    return fpr
+
+def get_fnr_label(y_true, model_preds, label):
+    cm = confusion_matrix(y_true[:, label], model_preds[:, label], labels=(0, 1))
+    fn = cm[1, 0]  # False Negatives
+    tp = cm[1, 1]  # True Positives
+    fnr = fn / (fn + tp) if (fn + tp) > 0 else 0
+    return fnr
