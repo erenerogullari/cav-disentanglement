@@ -1,0 +1,47 @@
+{
+  "os":  "Linux-6.8.0-88-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.10.18",
+  "startedAt":  "2025-12-10T15:05:32.273062Z",
+  "program":  "/home/erogullari/Workspace/cav-disentanglement/notebooks/train_model_elements.ipynb",
+  "codePath":  "/home/erogullari/Workspace/cav-disentanglement/notebooks/train_model_elements.ipynb",
+  "codePathLocal":  "train_model_elements.ipynb",
+  "git":  {
+    "remote":  "git@github.com:erenerogullari/cav-disentanglement.git",
+    "commit":  "f50fa323947b73c1ae4387362ee90d30db71a87a"
+  },
+  "email":  "eren.erogullari@hhi.fraunhofer.de",
+  "root":  ".",
+  "host":  "G450842",
+  "executable":  "/home/erogullari/miniconda3/envs/xai/bin/python",
+  "cpu_count":  10,
+  "cpu_count_logical":  20,
+  "gpu":  "Quadro P2000",
+  "gpu_count":  2,
+  "disk":  {
+    "/":  {
+      "total":  "502391562240",
+      "used":  "430598995968"
+    }
+  },
+  "memory":  {
+    "total":  "33569525760"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "Quadro P2000",
+      "memoryTotal":  "5368709120",
+      "cudaCores":  1024,
+      "architecture":  "Pascal",
+      "uuid":  "GPU-c27f3c95-3374-8c1e-c4e3-44cea51091ec"
+    },
+    {
+      "name":  "NVIDIA GeForce RTX 3060",
+      "memoryTotal":  "12884901888",
+      "cudaCores":  3584,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-de49c85e-358e-07ec-b731-afa20b3ef916"
+    }
+  ],
+  "cudaVersion":  "12.4",
+  "writerId":  "cnh97klothsswe6fcqsajt0xc59vzj17"
+}

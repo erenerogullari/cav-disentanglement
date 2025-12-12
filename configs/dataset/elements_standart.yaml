@@ -3,7 +3,7 @@ data_paths: [""]
 normalize_data: true
 shuffle: true
 image_size: 224
-num_samples: 20000
+num_samples: 10000
 element_count: 3
 element_size: 64
 element_size_delta: 8
@@ -13,19 +13,19 @@ name: elements
 
 correlations:
   - concept_names: ["shape:triangle", "texture:stripes_horizontal"]
-    degree: 0.8
+    degree: 0.9
   - concept_names: ["shape:circle", "texture:stripes_vertical"]
-    degree: 0.7
+    degree: 0.8
   - concept_names: ["shape:square", "texture:spots_random"]
-    degree: 0.6
+    degree: 0.8
   - concept_names: ["color:red", "shape:plus"]
-    degree: 0.75
+    degree: 0.7
   - concept_names: ["color:blue", "shape:cross"]
-    degree: 0.65
+    degree: 0.7
 
 localization:
-  concept_ids: []
-  concept_pair_ids: []
+  concept_ids: [0, 1, 2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+  concept_pair_ids: [[4, 18], [0, 19], [3, 14], [9, 2], [5, 1]]
 
 class_configs:
     - color: red

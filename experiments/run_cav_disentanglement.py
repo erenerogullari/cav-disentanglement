@@ -23,7 +23,7 @@ def run(cfg: DictConfig) -> None:
 
     # 1. Train CAVs
     log.info("1. Training CAVs:")
-    train_cavs(cfg)
+    # train_cavs(cfg)
 
     # 2. Concept Localization
     if len(cfg.localization.concept_ids) > 0:
