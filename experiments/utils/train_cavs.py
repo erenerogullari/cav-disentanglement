@@ -160,7 +160,6 @@ def eval_epoch(test_data, test_labels, cav_model, device):
     return metrics
 
 def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: torch.Tensor | None = None, save_dir: Path | None = None) -> nn.Module:
-def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: torch.Tensor | None = None, save_dir: Path | None = None) -> nn.Module:
     """Train CAVs with disentanglement losses.
     Args:
         cfg (DictConfig): Configuration object.
@@ -222,7 +221,7 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         x_latent, labels = extract_latents(cfg, model, dataset)
 
     n_concepts, n_features = labels.shape[1], x_latent.shape[1]
-    train_latents, train_labels, test_latents, test_labels = train_test_split(x_latent, labels, cfg.train.train_ratio)
+    train_latents, train_labels, val_latents, val_labels, _, _ = train_test_split(cfg, dataset, x_latent, labels)
     train_dataset = TensorDataset(train_latents, train_labels)
     train_loader = DataLoader(train_dataset, batch_size=cfg.train.batch_size, shuffle=True, num_workers=cfg.train.num_workers)
 
@@ -286,12 +285,6 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
             tqdm.write(f"CAV Loss:  {epoch_cav_loss:.4f} | Orth Loss: {epoch_orth_loss:.4f}")
             tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}") # type: ignore
 
-    log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
-    if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
-        log.info(f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}")
-    else:
-        log.info("No early exit criterion specified, using final epoch CAVs.")
-        best_cavs = copy.deepcopy(cav_model).to("cpu")
     log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
     if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
         log.info(f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}")

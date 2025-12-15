@@ -4,7 +4,7 @@ from typing import Tuple, Union
 import os
 
 class SimpleNet(nn.Module):
-    def __init__(self, num_classes=2, in_channels: int = 1, input_size: Union[int, Tuple[int, int]] = 32):
+    def __init__(self, num_classes=2, in_channels: int = 3, input_size: Union[int, Tuple[int, int]] = 224):
         super(SimpleNet, self).__init__()
         self.in_channels = int(in_channels)
         if isinstance(input_size, (tuple, list)):
@@ -17,7 +17,7 @@ class SimpleNet(nn.Module):
 
         layers = []
         current_channels = self.in_channels
-        for idx in range(6):
+        for idx in range(10):
             layers.append(nn.Conv2d(current_channels, 64, kernel_size=3, stride=1, padding=1, bias=False))
             layers.append(nn.BatchNorm2d(64))
             layers.append(nn.ReLU(inplace=True))
@@ -45,7 +45,7 @@ class SimpleNet(nn.Module):
         return x
     
 
-def get_simplenet(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: int = 1, input_size: int = 32) -> torch.nn.Module:
+def get_simplenet(ckpt_path=None, pretrained=True, n_class: int = 0, in_channels: int = 3, input_size: int = 224) -> torch.nn.Module:
 
     if n_class == 0:
         raise ValueError("n_class must be specified for SimpleNet model.")

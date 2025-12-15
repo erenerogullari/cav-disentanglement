@@ -27,10 +27,15 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
-    checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
-    return checkpoint_path
+    checkpoint_path = cfg_model.get("ckpt_path", None)
+    if checkpoint_path is None:
+        checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        log.info(f"No checkpoint path provided in config. Using default checkpoint directory: {checkpoint_dir}")
+        return checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
+    else:
+        log.info(f"Using provided checkpoint path: {checkpoint_path}")
+        return Path(checkpoint_path)
 
 def get_localization(cav: torch.Tensor, x: torch.Tensor, model: nn.Module, canonizers: List[Canonizer], layer: str, cav_mode: str = 'full', device: torch.device | str = 'cpu') -> torch.Tensor:
     """Generate heatmaps for input x using the provided CAVs and model.
