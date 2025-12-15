@@ -3,15 +3,15 @@ set -euo pipefail
 
 # ------------- Hyperparameters  -------------
 HARDWARE="workstation"          # Options: local, workstation
-MODEL="resnet18"                # Options: vgg16, resnet18, simplenet, lenet5
+MODEL="simplenet"               # Options: vgg16, resnet18, simplenet, lenet5
 DATASET="elements_standart"     # Options: celeba, elements_standart
-LAYER="last_conv"
+LAYER="features.30"
 
 CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav
 OPTIMAL_INIT="false"            # true = CAV finetuning, false = training from scratch
-EXIT_CRITERION="None"           # Options: None, orthogonality, auc
+EXIT_CRITERION="auc"            # Options: None, orthogonality, auc
 NUM_EPOCHS="200"
-LR="0.0001"                    # Learning rate for CAV optimization
+LR="0.001"                    # Learning rate for CAV optimization
 ALPHAS=("0" "0.01" "0.1" "1" "10" "100")      # Regularization weights for orthogonalization
 
 # ---------------------------------------------

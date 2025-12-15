@@ -60,7 +60,7 @@ def load_base_model(
         if fallback_path.exists():
             ckpt_path = str(fallback_path)
         else:
-            log.warning("No checkpoint found at %s. Using model defaults.", fallback_path)
+            raise FileNotFoundError(f"No checkpoint found at {ckpt_path} or {fallback_path}.")
 
     model_loader = get_fn_model_loader(cfg.model.name)
     model = model_loader(

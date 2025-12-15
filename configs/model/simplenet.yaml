@@ -1,5 +1,6 @@
 name: simplenet
-n_class: 69
+n_class: 153
 pretrained: False
 in_channels: 3
 input_size: 224
+ckpt_path: /media/erogullari/checkpoints/checkpoint_simplenet_elements.pth

@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - hardware@train: local
+  - hardware@train: workstation
   - dataset: celeba_attacked
   - model: vgg16
   - cav_model@cav: pattern_cav
