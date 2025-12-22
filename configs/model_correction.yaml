@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - hardware@train: workstation
-  - dataset: celeba_attacked
+  - dataset@dataset: celeba_attacked
   - model: vgg16
   - cav_model@cav: pattern_cav
 
@@ -11,11 +11,16 @@ experiment:
   random_seed: 42
 
 train:
-  learning_rate: 0.0001
+  learning_rate: 0.001
   num_epochs: 200
   val_ratio: 0.1
   test_ratio: 0.1
   random_seed: 42
+
+dataset:
+  val_split: ${train.val_ratio}
+  test_split: ${train.test_ratio}
+  seed: ${train.random_seed}
 
 cav:
   cav_mode: max

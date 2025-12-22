@@ -48,17 +48,6 @@ class CelebADataset(BaseDataset):
         
         self.attributes = pd.DataFrame(ds.attr, columns=ds.attr_names[:-1]) # type: ignore
         
-        USE_SUBSET = False
-        if USE_SUBSET:
-            log.info("Using subset.")
-            NTH = 10
-        else:
-            NTH = 1
-        filter_indices = np.zeros(len(ds.attr))
-        filter_indices[::NTH] = 1
-        
-        self.attributes = self.attributes[filter_indices == 1].reset_index(drop=True)
-        
         self.sample_ids_by_concept = {}
         for attr in self.attributes.columns:
             self.sample_ids_by_concept[attr] = np.where(self.attributes[attr].values == 1)[0]
@@ -67,7 +56,7 @@ class CelebADataset(BaseDataset):
         labels = self.attributes[ATTR_LABEL].values
         
         self.metadata = pd.DataFrame(
-            {'image_id': np.array(ds.filename)[filter_indices == 1], 'targets': labels})
+            {'image_id': np.array(ds.filename), 'targets': labels})
         attr_df = self.attributes.reset_index(drop=True).copy()
         attr_df.columns = attr_df.columns.astype(str)
         self.metadata = pd.concat([self.metadata.reset_index(drop=True), attr_df], axis=1)

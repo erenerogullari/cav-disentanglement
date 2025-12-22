@@ -174,7 +174,6 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     """
     device = cfg.train.device
     log.info(f"Using device: {device}")
-    seed_everything(cfg.train.random_seed)
 
     if save_dir is None:
         save_dir =  get_save_dir(cfg)
@@ -182,30 +181,10 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
     (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
     (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
     seed_everything(cfg.train.random_seed)
-
-    if save_dir is None:
-        save_dir =  get_save_dir(cfg)
-        
-    (save_dir / "metrics").mkdir(parents=True, exist_ok=True)   # type: ignore
-    (save_dir / "media").mkdir(parents=True, exist_ok=True)     # type: ignore
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
     dataset = instantiate(cfg.dataset)
-    dataset = instantiate(cfg.dataset)
     concept_names = dataset.get_concept_names()
-
-
-    if encodings is not None and labels is not None:
-        log.info("Using provided encodings and labels for CAV training.")
-        x_latent = encodings
-        labels = labels
-    else:
-        log.info("No encodings provided. Extracting latents from model and dataset.")
-        log.info(f"Loading model: {cfg.model.name}")
-        ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-        model = _load_model(cfg.model, ckpt_path, device)
-        log.info(f"Extracting latent variables at layer: {cfg.cav.layer}")
-        x_latent, labels = extract_latents(cfg, model, dataset)
 
 
     if encodings is not None and labels is not None:
@@ -303,7 +282,6 @@ def train_cavs(cfg: DictConfig, encodings: torch.Tensor | None = None, labels: t
         'confusion_matrix_hist': confusion_matrix_history,
         'early_exit_epoch':  early_exit_epoch,
     }
-    save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)   
     save_results(best_cavs.get_params()[0].detach(), final_metrics, save_dir)   
     save_plots(best_cavs.get_params()[0].detach(), cavs_original, final_metrics, x_latent, labels, concept_names, save_dir)
     torch.save(best_cavs.state_dict(), os.path.join(save_dir, 'state_dict.pth'))

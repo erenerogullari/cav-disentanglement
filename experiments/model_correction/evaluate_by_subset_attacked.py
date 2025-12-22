@@ -14,23 +14,6 @@ from sklearn.metrics import confusion_matrix
 
 log = logging.getLogger(__name__)
 
-def _legacy_config_view(config: DictConfig) -> dict:
-    cfg_dict = OmegaConf.to_container(config, resolve=True)
-    if not isinstance(cfg_dict, dict):
-        return {}
-    dataset_cfg = cfg_dict.get("dataset", {}) or {}
-    model_cfg = cfg_dict.get("model", {}) or {}
-    legacy_cfg = {**cfg_dict, **dataset_cfg}
-    if "dataset_name" not in legacy_cfg and isinstance(dataset_cfg, dict):
-        dataset_name = dataset_cfg.get("name")
-        if dataset_name is not None:
-            legacy_cfg["dataset_name"] = dataset_name
-    if "model_name" not in legacy_cfg and isinstance(model_cfg, dict):
-        model_name = model_cfg.get("name")
-        if model_name is not None:
-            legacy_cfg["model_name"] = model_name
-    return legacy_cfg
-
 def compute_model_scores(
         model: torch.nn.Module,
         dl: torch.utils.data.DataLoader,
@@ -100,17 +83,15 @@ def evaluate_by_subset_attacked(config: DictConfig, model: nn.Module, dataset: D
         config (dict): config for model correction run
     """
 
-    legacy_cfg = _legacy_config_view(config)
     device = config.train.device
-    dataset_name = legacy_cfg.get("dataset_name", config.dataset.name)
-
-    data_paths = legacy_cfg.get("data_paths", config.dataset.data_paths)
+    dataset_name = config.dataset.name
+    data_paths = config.dataset.data_paths
     batch_size = config.train.batch_size
-    img_size = legacy_cfg.get("image_size", config.dataset.image_size)
-    artifact_type = legacy_cfg.get("artifact_type", getattr(config.dataset, "artifact_type", None))
-    binary_target = legacy_cfg.get("binary_target", getattr(config.dataset, "binary_target", None))
-    artifact_kwargs = get_artifact_kwargs(legacy_cfg)
-    dataset_specific_kwargs = get_dataset_kwargs(legacy_cfg)   
+    img_size = config.dataset.image_size
+    artifact_type = config.dataset.artifact_type
+    binary_target = config.dataset.get("binary_target", None)
+    artifact_kwargs = get_artifact_kwargs(config.dataset)
+    dataset_specific_kwargs = get_dataset_kwargs(config.dataset)   
     idxs_train, idxs_val, idxs_test = dataset.do_train_val_test_split(  # type: ignore
         val_split=config.train.val_ratio,
         test_split=config.train.test_ratio,
@@ -132,7 +113,7 @@ def evaluate_by_subset_attacked(config: DictConfig, model: nn.Module, dataset: D
 
     if "imagenet" in dataset_name:
         all_classes = list(dataset.label_map.keys())    # type: ignore
-        if legacy_cfg.get("subset_correction", False):
+        if config.get("subset_correction", False):
             sets['test'] = sets['test'][::10]
             sets['val'] = sets['val'][::10]
     else:

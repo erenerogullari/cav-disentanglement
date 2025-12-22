@@ -19,6 +19,8 @@ def get_save_dir(cfg: DictConfig) -> Path:
     if cfg.cav.beta is not None:
         model_name += f"_beta{cfg.cav.beta}_n_targets{cfg.cav.n_targets}"
     model_name += f"_lr{cfg.train.learning_rate}"
+    if cfg.cav.optimal_init:
+        model_name += "_opt"
     return cache_dir / model_name
 
 def initialize_weights(C: torch.Tensor, labels: torch.Tensor, alpha: float, beta: float, n_targets: int, device: torch.device) -> torch.Tensor:

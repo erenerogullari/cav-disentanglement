@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
-from datasets.celeba.celeba import CelebADataset, celeba_augmentation
+from datasets.celeba.celeba_subset import CelebASubset, celeba_augmentation
 from datasets.celeba.artificial_artifact import insert_artifact
 import logging
 
@@ -25,7 +25,7 @@ def get_celeba_attacked_dataset(data_paths, normalize_data=True, image_size=224,
                                  attacked_classes=attacked_classes, p_artifact=p_artifact, 
                                  artifact_type=artifact_type, image_size=image_size, **kwargs)
 
-class CelebAAttackedDataset(CelebADataset):
+class CelebAAttackedDataset(CelebASubset):
     def __init__(self, 
                  data_paths, 
                  transform=None, 
@@ -34,8 +34,11 @@ class CelebAAttackedDataset(CelebADataset):
                  p_artifact=.2,
                  artifact_type="ch_text",
                  image_size=224,
+                 val_split=0.1,
+                 test_split=0.1,
+                 seed=42,
                  **artifact_kwargs):
-        super().__init__(data_paths, transform, augmentation, None)
+        super().__init__(data_paths, transform, augmentation, None, val_split, test_split, seed)
 
         self.image_size = image_size
         self.transform_resize = T.Resize((image_size, image_size), interpolation=T.InterpolationMode.BICUBIC)
