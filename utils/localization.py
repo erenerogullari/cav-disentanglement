@@ -25,4 +25,5 @@ def binarize_heatmaps(hms, kernel_size=7, sigma=8.0, thresholding="otsu", percen
         else:
             thresh = np.percentile(hm_smooth, percentile)
         heatmaps_binary.append((hm_smooth > thresh).astype(np.uint8))
+    heatmaps_binary = np.array(heatmaps_binary)
     return torch.Tensor(heatmaps_binary).type(torch.uint8)

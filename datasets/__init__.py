@@ -1,6 +1,7 @@
 import logging
 from typing import Callable
 from datasets.celeba.celeba import get_celeba_dataset
+from datasets.celeba.celeba_subset import get_celeba_subset
 from datasets.celeba.celeba_attacked import get_celeba_attacked_dataset
 from datasets.celeba.celeba_attacked_hm import get_celeba_attacked_hm_dataset
 from datasets.elements.elements import get_elements_dataset
@@ -16,6 +17,7 @@ DATASETS = {
     "funnybirds": get_funnybirds,
     "funnybirds_attributes": get_funnybirds_attributes,
     "celeba": get_celeba_dataset,
+    "celeba_subset": get_celeba_subset,
     "celeba_attacked": get_celeba_attacked_dataset,
     "celeba_attacked_hm": get_celeba_attacked_hm_dataset,
     "elements": get_elements_dataset,
@@ -41,6 +43,6 @@ def get_dataset_kwargs(config):
         "label_map_path": config["label_map_path"],
         "classes": config.get("classes", None),
         "train": True
-    } if "imagenet" in config['dataset_name'] else {}
+    } if "imagenet" in config.name else {}
 
     return dataset_specific_kwargs

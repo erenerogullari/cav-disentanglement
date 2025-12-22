@@ -26,7 +26,7 @@ def run(cfg: DictConfig) -> None:
     evaluate_model_correction(cfg, dir_model, base_model)
 
     log.info("3. Evaluating heatmaps.")
-    evaluate_concept_heatmaps(cfg, dir_model, base_model)
+    # evaluate_concept_heatmaps(cfg, dir_model, base_model)
 
     log.info("Experiment succesfully completed.")
 

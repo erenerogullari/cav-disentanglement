@@ -16,14 +16,15 @@ class SimpleNet(nn.Module):
             self.input_size = (size_int, size_int)
 
         layers = []
+        channels = [64, 64, 64, 128, 128, 128]
         current_channels = self.in_channels
-        for idx in range(10):
-            layers.append(nn.Conv2d(current_channels, 64, kernel_size=3, stride=1, padding=1, bias=False))
-            layers.append(nn.BatchNorm2d(64))
+        for idx, out_channels in enumerate(channels):
+            layers.append(nn.Conv2d(current_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
+            layers.append(nn.BatchNorm2d(out_channels))
             layers.append(nn.ReLU(inplace=True))
             if idx < 3:
                 layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-            current_channels = 64
+            current_channels = out_channels
 
         self.features = nn.Sequential(*layers)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))

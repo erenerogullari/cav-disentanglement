@@ -147,23 +147,29 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
     df_similarities.to_pickle(metrics_dir / "concept_similarities.pkl")
 
     log.info("Evaluating by subset attacked.")
-    accuracy_metrics_vanilla, cm_vanilla = evaluate_by_subset_attacked(cfg, model_vanilla, dataset, return_cm=True)
-    accuracy_metrics_baseline, cm_baseline = evaluate_by_subset_attacked(cfg, model_baseline, dataset,  return_cm=True)
-    accuracy_metrics_orth, cm_orth = evaluate_by_subset_attacked(cfg, model_orth, dataset, return_cm=True) 
+    metrics_vanilla, cm_vanilla = evaluate_by_subset_attacked(cfg, model_vanilla, dataset, return_cm=True)
+    metrics_baseline, cm_baseline = evaluate_by_subset_attacked(cfg, model_baseline, dataset,  return_cm=True)
+    metrics_orth, cm_orth = evaluate_by_subset_attacked(cfg, model_orth, dataset, return_cm=True) 
 
     data = []
-    for metric_name, value in accuracy_metrics_vanilla.items():
+    for metric_name, value in metrics_vanilla.items():
         data.append({'Metric': metric_name, 'Value': value, 'Model': 'Vanilla'})
-    for metric_name, value in accuracy_metrics_baseline.items():
+    for metric_name, value in metrics_baseline.items():
         data.append({'Metric': metric_name, 'Value': value, 'Model': 'Baseline CAV'})
-    for metric_name, value in accuracy_metrics_orth.items():
+    for metric_name, value in metrics_orth.items():
         data.append({'Metric': metric_name, 'Value': value, 'Model': 'Orthogonal CAV'})
     df = pd.DataFrame(data)
 
     selected_metrics = [
-        'test_accuracy_ch', 'test_accuracy_attacked', 'test_accuracy_clean',
-        'test_fpr_1_ch', 'test_fpr_1_attacked', 'test_fpr_1_clean',
-        'test_fnr_1_ch', 'test_fnr_1_attacked', 'test_fnr_1_clean'
+        f"test_accuracy_{split}" for split in ("ch", "attacked", "clean")
+    ] + [
+        f"test_fpr_{cls}_{split}"
+        for cls in dataset.classes
+        for split in ("ch", "attacked", "clean")
+    ] + [
+        f"test_fnr_{cls}_{split}"
+        for cls in dataset.classes
+        for split in ("ch", "attacked", "clean")
     ]
 
     df_filtered = df[df['Metric'].isin(selected_metrics)]
@@ -175,18 +181,18 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
     df_filtered.to_pickle(metrics_dir / "selected_metrics.pkl")
 
     metrics_payload = {
-        "vanilla": accuracy_metrics_vanilla,
-        "baseline": accuracy_metrics_baseline,
-        "orthogonal": accuracy_metrics_orth,
+        "vanilla": metrics_vanilla,
+        "baseline": metrics_baseline,
+        "orthogonal": metrics_orth,
     }
     confusion_payload = {
         "vanilla": cm_vanilla,
         "baseline": cm_baseline,
         "orthogonal": cm_orth,
     }
-    with open(metrics_dir / "accuracy_metrics.pkl", "wb") as f:
+    with open(metrics_dir / "metrics_per_model.pkl", "wb") as f:
         pickle.dump(metrics_payload, f)
-    with open(metrics_dir / "confusion_matrices.pkl", "wb") as f:
+    with open(metrics_dir / "confusion_per_model.pkl", "wb") as f:
         pickle.dump(confusion_payload, f)
 
     for cm, name in [(cm_vanilla, "vanilla"), (cm_baseline, "baseline"), (cm_orth, "orthogonal")]:
