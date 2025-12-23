@@ -1,0 +1,87 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            1615cgex4xizz9lay6jnlear57973wm1:
+                codePath: /home/erogullari/Workspace/cav-disentanglement/notebooks/train_model_elements.ipynb
+                codePathLocal: train_model_elements.ipynb
+                cpu_count: 10
+                cpu_count_logical: 20
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "502391562240"
+                        used: "445793624064"
+                email: eren.erogullari@hhi.fraunhofer.de
+                executable: /home/erogullari/miniconda3/envs/xai/bin/python
+                git:
+                    commit: ecb25b56c56e895308e1425c7414684b524d1ade
+                    remote: git@github.com:erenerogullari/cav-disentanglement.git
+                gpu: Quadro P2000
+                gpu_count: 2
+                gpu_nvidia:
+                    - architecture: Pascal
+                      cudaCores: 1024
+                      memoryTotal: "5368709120"
+                      name: Quadro P2000
+                      uuid: GPU-c27f3c95-3374-8c1e-c4e3-44cea51091ec
+                    - architecture: Ampere
+                      cudaCores: 3584
+                      memoryTotal: "12884901888"
+                      name: NVIDIA GeForce RTX 3060
+                      uuid: GPU-de49c85e-358e-07ec-b731-afa20b3ef916
+                host: G450842
+                memory:
+                    total: "33569525760"
+                os: Linux-6.8.0-88-generic-x86_64-with-glibc2.39
+                program: /home/erogullari/Workspace/cav-disentanglement/notebooks/train_model_elements.ipynb
+                python: CPython 3.10.18
+                root: .
+                startedAt: "2025-12-22T12:44:33.403348Z"
+                writerId: 1615cgex4xizz9lay6jnlear57973wm1
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.10.18
+        t:
+            "1":
+                - 1
+                - 5
+                - 9
+                - 41
+                - 49
+                - 50
+                - 51
+                - 53
+                - 63
+                - 103
+            "2":
+                - 1
+                - 5
+                - 9
+                - 41
+                - 49
+                - 50
+                - 51
+                - 53
+                - 63
+                - 103
+            "3":
+                - 2
+                - 7
+                - 13
+                - 66
+            "4": 3.10.18
+            "5": 0.23.1
+            "8":
+                - 1
+                - 2
+            "12": 0.23.1
+            "13": linux-x86_64
