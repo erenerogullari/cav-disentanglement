@@ -170,7 +170,15 @@ class CelebASubset(BaseDataset):
     
     # Override
     def do_train_val_test_split(self, val_split=.1, test_split=.1, seed=0):
-        return self.idxs_train, self.idxs_val, self.idxs_test
+        rng = np.random.default_rng(seed=seed)
+        idxs_all = np.arange(len(self))
+        idxs_val = np.array(sorted(rng.choice(idxs_all, size=int(np.round(len(idxs_all) * val_split)), replace=False)))
+        idxs_left = np.array(list(set(idxs_all) - set(idxs_val)))
+        idxs_test = np.array(
+            sorted(rng.choice(idxs_left, size=int(np.round(len(idxs_all) * test_split)), replace=False)))
+        idxs_train = np.array(sorted(list(set(idxs_left) - set(idxs_test))))
+
+        return idxs_train, idxs_val, idxs_test
 
 
 if __name__ == "__main__":

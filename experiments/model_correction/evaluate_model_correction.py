@@ -98,10 +98,8 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
         None
     """
     save_dir = get_save_dir(cfg)
-    media_dir = save_dir / "media"
-    metrics_dir = save_dir / "metrics"
-    media_dir.mkdir(parents=True, exist_ok=True)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = save_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("Seeding RNGs with %s", cfg.train.random_seed)
     seed_everything(int(cfg.train.random_seed))
@@ -143,8 +141,8 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
             data_similarities.append({'concept': c, 'v': v.item(), 'model': 'Orthogonal CAV'})
 
     df_similarities = pd.DataFrame(data_similarities)
-    plot_concept_similarities(df_similarities, media_dir)
-    df_similarities.to_pickle(metrics_dir / "concept_similarities.pkl")
+    plot_concept_similarities(df_similarities, results_dir)
+    df_similarities.to_pickle(results_dir / "concept_similarities.pkl")
 
     log.info("Evaluating by subset attacked.")
     metrics_vanilla, cm_vanilla = evaluate_by_subset_attacked(cfg, model_vanilla, dataset, return_cm=True)
@@ -176,9 +174,9 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
     df_filtered['Category'] = df_filtered['Metric'].str.extract(r'_(clean|attacked|ch)')[0]
     df_filtered['Metric Type'] = df_filtered['Metric'].str.replace(r'_(1|ch|attacked|clean)', '', regex=True)
     df_filtered = df_filtered.loc[~(df_filtered['Category'] == "ch")]
-    plot_metric_comparison(df_filtered, media_dir)
-    df.to_pickle(metrics_dir / "all_metrics.pkl")
-    df_filtered.to_pickle(metrics_dir / "selected_metrics.pkl")
+    plot_metric_comparison(df_filtered, results_dir)
+    df.to_pickle(results_dir / "all_metrics.pkl")
+    df_filtered.to_pickle(results_dir / "selected_metrics.pkl")
 
     metrics_payload = {
         "vanilla": metrics_vanilla,
@@ -190,11 +188,11 @@ def evaluate_model_correction(cfg: DictConfig, cav_model: nn.Module, base_model:
         "baseline": cm_baseline,
         "orthogonal": cm_orth,
     }
-    with open(metrics_dir / "metrics_per_model.pkl", "wb") as f:
+    with open(results_dir / "metrics_per_model.pkl", "wb") as f:
         pickle.dump(metrics_payload, f)
-    with open(metrics_dir / "confusion_per_model.pkl", "wb") as f:
+    with open(results_dir / "confusion_per_model.pkl", "wb") as f:
         pickle.dump(confusion_payload, f)
 
     for cm, name in [(cm_vanilla, "vanilla"), (cm_baseline, "baseline"), (cm_orth, "orthogonal")]:
-        plot_confusion_matrices(cm["test"], media_dir, model_tag=name)
+        plot_confusion_matrices(cm["test"], results_dir, model_tag=name)
     
