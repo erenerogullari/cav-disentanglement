@@ -74,10 +74,8 @@ def evaluate_concept_heatmaps(
     composite = EpsilonPlusFlat(canonizers)
 
     save_dir = get_save_dir(cfg)
-    media_dir = save_dir / "media"
-    metrics_dir = save_dir / "metrics"
-    media_dir.mkdir(parents=True, exist_ok=True)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = save_dir / "metrics"
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     cav_localizations: Dict[str, Dict[str, torch.Tensor]] = {}
     imgs = None
@@ -99,7 +97,7 @@ def evaluate_concept_heatmaps(
         log.warning("Failed to compute heatmaps due to missing ground-truth annotations.")
         return
 
-    savepath = media_dir / f"concept_heatmaps"
+    savepath = save_dir / f"concept_heatmaps"
     create_plot(dataset, imgs[: min(len(imgs), num_imgs)], cav_localizations, gts["timestamp"], gts["box"], savepath)
 
     results_quant = {}
@@ -122,10 +120,10 @@ def evaluate_concept_heatmaps(
         ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0)),
     ], columns=["CAV", "Concept Relevance"])
     vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
-    savepath_quant = media_dir / f"concept_relevance"
+    savepath_quant = save_dir / f"concept_relevance"
     plot_concept_relevance(data_plot, vmax, savepath_quant)
 
-    with open(metrics_dir / f"concept_relevance.pkl", "wb") as f:
+    with open(save_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
 
 

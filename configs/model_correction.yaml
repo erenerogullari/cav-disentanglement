@@ -24,7 +24,7 @@ dataset:
 
 cav:
   cav_mode: max
-  layer: features.28
+  layer: features.29
   alpha: ???
   beta: null
   n_targets: 0
