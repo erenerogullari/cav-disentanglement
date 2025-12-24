@@ -12,7 +12,8 @@ OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from s
 EXIT_CRITERION="orthogonality"            # Options: None, orthogonality, auc
 NUM_EPOCHS="200"
 LRS=("0.0001")                   # Learning rate for CAV optimization
-ALPHAS=("0.01" "0.1" "1" "10" "100")      # Regularization weights for orthogonalization
+# ALPHAS=("0.01" "0.1" "1" "10" "100")      # Regularization weights for orthogonalization
+ALPHAS=("0.1" "1" "10" "100")      # Regularization weights for orthogonalization
 
 # ---------------------------------------------
 
