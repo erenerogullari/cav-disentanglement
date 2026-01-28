@@ -2,15 +2,14 @@
 set -euo pipefail
 
 # Hyper parameters
-HARDWARE="local"          # Options: local, workstation
+HARDWARE="workstation"          # Options: local, workstation
 
-CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav
+CAV_MODEL="multi_cav"         # Options: pattern_cav, multi_cav
 OPTIMAL_INIT="true"            # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="orthogonality"            # Options: None, orthogonality, auc
 NUM_EPOCHS="200"
-LR="0.00001"                    # Learning rate for CAV optimization
-# ALPHAS=("0.01" "0.1" "1" "10" "100")
-ALPHAS=("0.01")
+LR="0.0001"                    # Learning rate for CAV optimization
+ALPHAS=("0.01" "0.1" "1" "10")
 
 for ALPHA in "${ALPHAS[@]}"; do
   echo "Running model correction experiment with alpha=${ALPHA}"

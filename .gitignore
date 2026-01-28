@@ -3,6 +3,13 @@ outputs/
 
 # Unnecessary directories
 results/
+media/activation_steering/*
+media/auc_orthogonality_over_layers/*
+media/cross_correlation_invariance/*
+media/explicit_disentanglement/*
+media/implicit_disentanglement/*
+media/model_correction/*
+media/model_training/*
 # DELETE/
 
 # Model checkpoints
@@ -13,6 +20,9 @@ configs/
 
 # Variables
 variables/
+
+# Other
+notebooks/train_model_elements.ipynb
 
 # DS_Store files
 .DS_Store

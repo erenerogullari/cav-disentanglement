@@ -595,7 +595,7 @@ def visualize_sim_matrix(A: torch.Tensor, labels: List[str], title: str = 'Simil
 def visualize_before_after_sim_matrices(
     before: torch.Tensor, 
     after: torch.Tensor, 
-    labels: List[str],
+    labels: List[str] | None = None,
     title: str = "Cosine Sim Matrices Before vs. After"
 ):
     """
