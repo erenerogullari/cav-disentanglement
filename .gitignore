@@ -10,6 +10,8 @@ media/explicit_disentanglement/*
 media/implicit_disentanglement/*
 media/model_correction/*
 media/model_training/*
+notebooks/wandb/
+*.wandb
 # DELETE/
 
 # Model checkpoints
