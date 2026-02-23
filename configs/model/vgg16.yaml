@@ -2,5 +2,9 @@ name: vgg16
 n_class: 2
 pretrained: True
 # ckpt_path: /media/erogullari/checkpoints/checkpoint_vgg16_celeba_attacked.pth
+<<<<<<< HEAD
 # ckpt_path: /media/erogullari/checkpoints/checkpoint_vgg16_celeba.pth
+=======
+ckpt_path: /media/erogullari/checkpoints/checkpoint_vgg16_celeba.pth
+>>>>>>> d80d7d74ea61532c08ecb0d45bbe22a18d9df1a3
 # ckpt_path: /media/erogullari/checkpoints/checkpoint_vgg16_elements.pth
