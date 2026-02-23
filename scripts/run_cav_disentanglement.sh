@@ -8,12 +8,12 @@ DATASET="celeba"     # Options: celeba, elements_standart
 LAYER="features.28"
 # LAYERS=("features.0" "features.2" "features.5" "features.7" "features.10" "features.12" "features.14" "features.17" "features.19" "features.21" "features.24" "features.26")
 
-CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav
-OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
-EXIT_CRITERION="orthogonality"            # Options: None, orthogonality, auc
-NUM_EPOCHS="200"
+CAV_MODEL="multi_cav"         # Options: pattern_cav, multi_cav
+OPTIMAL_INIT="false"             # true = CAV finetuning, false = training from scratch
+EXIT_CRITERION="None"            # Options: None, orthogonality, auc
+NUM_EPOCHS="100"
 LRS=("0.0001")                   # Learning rate for CAV optimization
-ALPHAS=("0.0001" "0.001")      # Regularization weights for orthogonalization
+ALPHAS=("1000" "10000")      # Regularization weights for orthogonalization
 
 # ---------------------------------------------
 
