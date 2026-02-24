@@ -2,18 +2,18 @@
 set -euo pipefail
 
 # ------------- Hyperparameters  -------------
-HARDWARE="workstation"          # Options: local, workstation
-MODEL="vgg16"               # Options: vgg16, resnet18, simplenet, lenet5
-DATASET="celeba"     # Options: celeba, elements_standart
-LAYER="features.28"
-# LAYERS=("features.0" "features.2" "features.5" "features.7" "features.10" "features.12" "features.14" "features.17" "features.19" "features.21" "features.24" "features.26")
+HARDWARE="local"          # Options: local, workstation
+MODEL="vit_b_32"                # Options: vgg16, resnet18, simplenet, lenet5, vit_b_32, vit_b_16
+DATASET="celeba"                # Options: celeba, elements_standart
+LAYER="inspection_layer"
 
-CAV_MODEL="multi_cav"         # Options: pattern_cav, multi_cav
+CAV_MODEL="pattern_cav"          # Options: pattern_cav, multi_cav
+CAV_MODE="full"
 OPTIMAL_INIT="false"             # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="None"            # Options: None, orthogonality, auc
-NUM_EPOCHS="100"
+NUM_EPOCHS="10"
 LRS=("0.0001")                   # Learning rate for CAV optimization
-ALPHAS=("1000" "10000")      # Regularization weights for orthogonalization
+ALPHAS=("1")      # Regularization weights for orthogonalization
 
 # ---------------------------------------------
 
@@ -25,6 +25,7 @@ for ALPHA in "${ALPHAS[@]}"; do
       model="${MODEL}" \
       dataset="${DATASET}" \
       cav_model@cav="${CAV_MODEL}" \
+      cav.cav_mode="${CAV_MODE}" \
       cav.optimal_init="${OPTIMAL_INIT}" \
       cav.exit_criterion="${EXIT_CRITERION}" \
       cav.layer="${LAYER}" \
