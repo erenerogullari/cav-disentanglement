@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ------------- Hyperparameters  -------------
-HARDWARE="local"          # Options: local, workstation
+HARDWARE="workstation"          # Options: local, workstation
 MODEL="vit_b_32"                # Options: vgg16, resnet18, simplenet, lenet5, vit_b_32, vit_b_16
 DATASET="celeba"                # Options: celeba, elements_standart
-LAYER="inspection_layer"
+LAYER="inspection_layer"        
 
 CAV_MODEL="pattern_cav"          # Options: pattern_cav, multi_cav
-CAV_MODE="full"
+CAV_MODE="full"                  # Options: full, max, avg
 OPTIMAL_INIT="false"             # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="None"            # Options: None, orthogonality, auc
 NUM_EPOCHS="10"

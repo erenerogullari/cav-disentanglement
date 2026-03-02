@@ -24,7 +24,7 @@ configs/
 variables/
 
 # Other
-notebooks/train_model_elements.ipynb
+# notebooks/train_model_elements.ipynb
 
 # DS_Store files
 .DS_Store

@@ -10,20 +10,23 @@ from experiments.utils.localization import localize_concepts, colocalize_concept
 
 log = logging.getLogger(__name__)
 
-@hydra.main(version_base=None, config_path="../configs", config_name="cav_disentanglement")
+
+@hydra.main(
+    version_base=None, config_path="../configs", config_name="cav_disentanglement"
+)
 def run(cfg: DictConfig) -> None:
     """Main function to run the disentangle_cavs experiment.
     Args:
         cfg (DictConfig): Configuration object containing all parameters.
     Returns:
-        None  
+        None
     """
     device = cfg.train.device
     log.info(f"Using device: {device}")
 
     # 1. Train CAVs
     log.info("1. Training CAVs:")
-    train_cavs(cfg)
+    # train_cavs(cfg)
 
     # 2. Concept Localization
     if len(cfg.localization.concept_ids) > 0:
@@ -31,7 +34,7 @@ def run(cfg: DictConfig) -> None:
         localize_concepts(cfg)
     else:
         log.info("2. Skipping Concept Localization...")
-    
+
     # 3. Concept Colocalization
     if len(cfg.localization.concept_pair_ids) > 0:
         log.info("3. Concept Colocalization:")

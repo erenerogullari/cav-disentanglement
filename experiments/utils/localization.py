@@ -26,18 +26,30 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     checkpoint_path = cfg_model.get("ckpt_path", None)
     if checkpoint_path is None:
         checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        log.info(f"No checkpoint path provided in config. Using default checkpoint directory: {checkpoint_dir}")
+        log.info(
+            f"No checkpoint path provided in config. Using default checkpoint directory: {checkpoint_dir}"
+        )
         return checkpoint_dir / f"checkpoint_{cfg_model.name}_{dataset_name}.pth"
     else:
         log.info(f"Using provided checkpoint path: {checkpoint_path}")
         return Path(checkpoint_path)
 
-def get_localization(cav: torch.Tensor, x: torch.Tensor, model: nn.Module, canonizers: List[Canonizer], layer: str, cav_mode: str = 'full', device: torch.device | str = 'cpu') -> torch.Tensor:
+
+def get_localization(
+    cav: torch.Tensor,
+    x: torch.Tensor,
+    model: nn.Module,
+    canonizers: List[Canonizer],
+    layer: str,
+    cav_mode: str = "full",
+    device: torch.device | str = "cpu",
+) -> torch.Tensor:
     """Generate heatmaps for input x using the provided CAVs and model.
     Args:
         cav (torch.Tensor): The Concept Activation Vector.
@@ -52,33 +64,52 @@ def get_localization(cav: torch.Tensor, x: torch.Tensor, model: nn.Module, canon
     """
     attribution = CondAttribution(model)
     x = x.detach().to(device)
-    activations = _get_features(x.to(device), layer, attribution, canonizers, cav_mode="full", device=device).detach()
-    batch, channels, height, width = activations.shape
+    activations = _get_features(
+        x.to(device), layer, attribution, canonizers, cav_mode="full", device=device
+    ).detach()
     activations = activations.to(device)
     cav = cav.to(device)
-    
-    if cav_mode == 'full':
-        init_rel = (activations * cav[..., None, None])
-    elif cav_mode == 'max':
+
+    if cav_mode == "full":
+        cav = cav[..., None, None] if activations.dim() == 4 else cav
+        init_rel = activations * cav
+    elif cav_mode == "max":
+        batch, channels, height, width = activations.shape
         flat = activations.view(batch, channels, -1)
         max_vals, max_idx = flat.max(dim=2)
         rel_flat = torch.zeros_like(flat)
         rel_flat.scatter_(2, max_idx.unsqueeze(-1), (max_vals * cav).unsqueeze(-1))
         init_rel = rel_flat.view_as(activations)
-    elif cav_mode == 'avg':
+    elif cav_mode == "avg":
+        batch, channels, height, width = activations.shape
         spatial_size = max(height * width, 1)
-        channel_scores = activations.mean(dim=(-1, -2), keepdim=True) * cav[..., None, None]
+        channel_scores = (
+            activations.mean(dim=(-1, -2), keepdim=True) * cav[..., None, None]
+        )
         init_rel = channel_scores.expand_as(activations) / spatial_size
     else:
-        raise ValueError(f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'.")
+        raise ValueError(
+            f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
+        )
 
     composite = EpsilonPlusFlat(canonizers)
-    attr = attribution(x.to(device).requires_grad_(), [{}], composite, start_layer=layer, init_rel=init_rel.to(device))
+    attr = attribution(
+        x.to(device).requires_grad_(),
+        [{}],
+        composite,
+        start_layer=layer,
+        init_rel=init_rel.to(device),
+    )
     heatmaps = attr.heatmap.detach().cpu()
     return heatmaps
 
 
-def binarize_heatmaps(heatmaps:torch.Tensor, kernel_size:int=7, sigma:float=8.0, percentile:int=92):
+def binarize_heatmaps(
+    heatmaps: torch.Tensor,
+    kernel_size: int = 7,
+    sigma: float = 8.0,
+    percentile: int = 92,
+):
     """Binarize heatmaps using Gaussian smoothing and percentile thresholding.
     Args:
         heatmaps (torch.Tensor): Heatmaps to be binarized.
@@ -113,47 +144,85 @@ def localize_concepts(cfg: DictConfig) -> None:
     random.seed(cfg.localization.random_seed)
     save_dir = get_save_dir(cfg)
 
-    # Load model and dataset 
+    # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-    model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
-                                                pretrained=cfg.model.pretrained,
-                                                n_class=cfg.model.n_class).to(device)
+    model = get_fn_model_loader(cfg.model.name)(
+        ckpt_path=(
+            ckpt_path if ckpt_path.is_file() else getattr(cfg.model, "ckpt_path", None)
+        ),
+        pretrained=cfg.model.pretrained,
+        n_class=cfg.model.n_class,
+    ).to(device)
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
-                                        normalize_data=cfg.dataset.normalize_data,
-                                        image_size=cfg.dataset.image_size)
+    dataset = get_dataset(cfg.dataset.name)(
+        data_paths=cfg.dataset.data_paths,
+        normalize_data=cfg.dataset.normalize_data,
+        image_size=cfg.dataset.image_size,
+    )
     concept_names = dataset.get_concept_names()
 
     # Load CAVs
     log.info(f"Loading CAVs.")
     if not os.path.exists(os.path.join(save_dir, "cavs.pt")):
-        raise FileNotFoundError(f"CAVs not found at {os.path.join(save_dir, 'cavs.pt')}. Please train CAVs first.")
+        raise FileNotFoundError(
+            f"CAVs not found at {os.path.join(save_dir, 'cavs.pt')}. Please train CAVs first."
+        )
     cavs = torch.load(os.path.join(save_dir, "cavs.pt"), weights_only=True)
     x_latent, labels = extract_latents(cfg, model, dataset)
-    cavs_original, bias_original = compute_cavs(x_latent, labels, type=cfg.cav.name, normalize=True)
+    cavs_original, bias_original = compute_cavs(
+        x_latent, labels, type=cfg.cav.name, normalize=True
+    )
 
     canonizers = get_canonizer(cfg.model.name)
-    os.makedirs(os.path.join(save_dir, 'localization'), exist_ok=True)
+    os.makedirs(os.path.join(save_dir, "localization"), exist_ok=True)
 
     # Generate heatmaps for each concept
     log.info(f"Generating heatmaps for concepts.")
     for concept_id in tqdm(cfg.localization.concept_ids):
         concept_name = concept_names[concept_id]
         n_samples = cfg.localization.n_samples_each
-        sample_ids = random.sample(list(dataset.sample_ids_by_concept[concept_name]), n_samples)
+        sample_ids = random.sample(
+            list(dataset.sample_ids_by_concept[concept_name]), n_samples
+        )
         samples = [dataset[i][0].unsqueeze(0) for i in sample_ids]
-        samples = torch.vstack(samples)         # Shape [n_samples_each, 3, 224, 224]
+        samples = torch.vstack(samples)  # Shape [n_samples_each, 3, 224, 224]
         samples.requires_grad_()
 
-        heatmaps_original = get_localization(cavs_original[concept_id].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)   # Shape [n_samples_each, 1, 224, 224]
-        heatmaps_disentangled = get_localization(cavs[concept_id].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)                     # Shape [n_samples_each, 1, 224, 224]
-        heatmaps = torch.cat([heatmaps_original, heatmaps_disentangled], dim=1)  # Shape [n_samples_each, 2, 224, 224]
+        heatmaps_original = get_localization(
+            cavs_original[concept_id].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps_disentangled = get_localization(
+            cavs[concept_id].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps = torch.cat(
+            [heatmaps_original, heatmaps_disentangled], dim=1
+        )  # Shape [n_samples_each, 2, 224, 224]
 
         sample_latents = x_latent[sample_ids].to(device=cavs.device, dtype=cavs.dtype)
-        dp_original = torch.matmul(sample_latents, cavs_original[concept_id].to(sample_latents))
-        dp_disentangled = torch.matmul(sample_latents, cavs[concept_id].to(sample_latents))
+        dp_original = torch.matmul(
+            sample_latents, cavs_original[concept_id].to(sample_latents)
+        )
+        dp_disentangled = torch.matmul(
+            sample_latents, cavs[concept_id].to(sample_latents)
+        )
         dot_matrix = torch.stack([dp_original, dp_disentangled], dim=1).detach().cpu()
 
         titles = ["Original Image", "CAVs Original", "CAVs Disentangled"]
@@ -166,9 +235,17 @@ def localize_concepts(cfg: DictConfig) -> None:
                 dot_products=dot_matrix[i].tolist(),
                 display=False,
             )
-            fig.savefig(os.path.join(save_dir, 'localization', f"{concept_id}_{concept_name}_sample{i}.png"))
+            fig.savefig(
+                os.path.join(
+                    save_dir,
+                    "localization",
+                    f"{concept_id}_{concept_name}_sample{i}.png",
+                )
+            )
 
-    log.info(f"Localization completed. Results saved to {os.path.join(save_dir, 'localization')}.")
+    log.info(
+        f"Localization completed. Results saved to {os.path.join(save_dir, 'localization')}."
+    )
 
 
 def colocalize_concept_pairs(cfg: DictConfig) -> None:
@@ -185,29 +262,39 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
     random.seed(cfg.localization.random_seed)
     save_dir = get_save_dir(cfg)
 
-    # Load model and dataset 
+    # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-    model = get_fn_model_loader(cfg.model.name)(ckpt_path=ckpt_path,
-                                                pretrained=cfg.model.pretrained,
-                                                n_class=cfg.model.n_class).to(device)
+    model = get_fn_model_loader(cfg.model.name)(
+        ckpt_path=(
+            ckpt_path if ckpt_path.is_file() else getattr(cfg.model, "ckpt_path", None)
+        ),
+        pretrained=cfg.model.pretrained,
+        n_class=cfg.model.n_class,
+    ).to(device)
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
-    dataset = get_dataset(cfg.dataset.name)(data_paths=cfg.dataset.data_paths,
-                                        normalize_data=cfg.dataset.normalize_data,
-                                        image_size=cfg.dataset.image_size)
+    dataset = get_dataset(cfg.dataset.name)(
+        data_paths=cfg.dataset.data_paths,
+        normalize_data=cfg.dataset.normalize_data,
+        image_size=cfg.dataset.image_size,
+    )
     concept_names = dataset.get_concept_names()
 
     # Load CAVs
     log.info(f"Loading CAVs.")
     if not os.path.exists(os.path.join(save_dir, "cavs.pt")):
-        raise FileNotFoundError(f"CAVs not found at {os.path.join(save_dir, 'cavs.pt')}. Please train CAVs first.")
+        raise FileNotFoundError(
+            f"CAVs not found at {os.path.join(save_dir, 'cavs.pt')}. Please train CAVs first."
+        )
     cavs = torch.load(os.path.join(save_dir, "cavs.pt"), weights_only=True)
     x_latent, labels = extract_latents(cfg, model, dataset)
-    cavs_original, bias_original = compute_cavs(x_latent, labels, type=cfg.cav.name, normalize=True)
+    cavs_original, bias_original = compute_cavs(
+        x_latent, labels, type=cfg.cav.name, normalize=True
+    )
 
     canonizers = get_canonizer(cfg.model.name)
-    os.makedirs(os.path.join(save_dir, 'colocalization'), exist_ok=True)
+    os.makedirs(os.path.join(save_dir, "colocalization"), exist_ok=True)
 
     # Generate heatmaps for each concept pair
     log.info(f"Generating heatmaps for concept pairs.")
@@ -221,28 +308,90 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
         # Get the intersection
         samples = list(set(samples1).intersection(set(samples2)))
         if len(samples) == 0:
-            log.warning(f"No samples found for concept pair ({concept_name1}, {concept_name2}). Skipping...")
+            log.warning(
+                f"No samples found for concept pair ({concept_name1}, {concept_name2}). Skipping..."
+            )
             continue
         sample_ids = random.sample(samples, min(n_samples, len(samples)))
         samples = [dataset[i][0].unsqueeze(0) for i in sample_ids]
-        samples = torch.vstack(samples)         # Shape [n_samples_each, 3, 224, 224]
+        samples = torch.vstack(samples)  # Shape [n_samples_each, 3, 224, 224]
         samples.requires_grad_()
 
-        heatmaps_original_1 = get_localization(cavs_original[concept_pair[0]].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)   # Shape [n_samples_each, 1, 224, 224]
-        heatmaps_original_2 = get_localization(cavs_original[concept_pair[1]].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)   # Shape [n_samples_each, 1, 224, 224]
-        heatmaps_disentangled_1 = get_localization(cavs[concept_pair[0]].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)                     # Shape [n_samples_each, 1, 224, 224]
-        heatmaps_disentangled_2 = get_localization(cavs[concept_pair[1]].unsqueeze(0), samples, model, canonizers, cfg.cav.layer, cfg.localization.cav_mode, device).unsqueeze(1)                     # Shape [n_samples_each, 1, 224, 224]
-        heatmaps_original = torch.cat([heatmaps_original_1, heatmaps_original_2], dim=1)          # Shape [n_samples_each, 2, 224, 224]
-        heatmaps_disentangled = torch.cat([heatmaps_disentangled_1, heatmaps_disentangled_2], dim=1)  # Shape [n_samples_each, 2, 224, 224]
+        heatmaps_original_1 = get_localization(
+            cavs_original[concept_pair[0]].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps_original_2 = get_localization(
+            cavs_original[concept_pair[1]].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps_disentangled_1 = get_localization(
+            cavs[concept_pair[0]].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps_disentangled_2 = get_localization(
+            cavs[concept_pair[1]].unsqueeze(0),
+            samples,
+            model,
+            canonizers,
+            cfg.cav.layer,
+            cfg.localization.cav_mode,
+            device,
+        ).unsqueeze(
+            1
+        )  # Shape [n_samples_each, 1, 224, 224]
+        heatmaps_original = torch.cat(
+            [heatmaps_original_1, heatmaps_original_2], dim=1
+        )  # Shape [n_samples_each, 2, 224, 224]
+        heatmaps_disentangled = torch.cat(
+            [heatmaps_disentangled_1, heatmaps_disentangled_2], dim=1
+        )  # Shape [n_samples_each, 2, 224, 224]
         sample_latents = x_latent[sample_ids].to(device=cavs.device, dtype=cavs.dtype)
-        dp_original = torch.matmul(sample_latents, cavs_original[concept_pair].to(sample_latents).T).detach().cpu()
-        dp_disentangled = torch.matmul(sample_latents, cavs[concept_pair].to(sample_latents).T).detach().cpu()
+        dp_original = (
+            torch.matmul(
+                sample_latents, cavs_original[concept_pair].to(sample_latents).T
+            )
+            .detach()
+            .cpu()
+        )
+        dp_disentangled = (
+            torch.matmul(sample_latents, cavs[concept_pair].to(sample_latents).T)
+            .detach()
+            .cpu()
+        )
 
         titles = ["Original Image", concept_name1, concept_name2]
         row_titles = ["Original CAV", "Disentangled CAV"]
         for idx, sample_id in enumerate(sample_ids):
-            pair_heatmaps = torch.stack([heatmaps_original[idx], heatmaps_disentangled[idx]]).detach().cpu()
-            dot_products = torch.stack([dp_original[idx], dp_disentangled[idx]]).detach().cpu()
+            pair_heatmaps = (
+                torch.stack([heatmaps_original[idx], heatmaps_disentangled[idx]])
+                .detach()
+                .cpu()
+            )
+            dot_products = (
+                torch.stack([dp_original[idx], dp_disentangled[idx]]).detach().cpu()
+            )
             fig = visualize_heatmap_pair(
                 samples[idx].detach().cpu(),
                 pair_heatmaps,
@@ -252,32 +401,49 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
                 display=False,
             )
             filename = f"pair_{concept_pair[0]}-{concept_pair[1]}_{concept_name1}_{concept_name2}_sample{idx}.png"
-            fig.savefig(os.path.join(save_dir, 'colocalization', filename))
+            fig.savefig(os.path.join(save_dir, "colocalization", filename))
 
-    log.info(f"Colocalization completed. Results saved to {os.path.join(save_dir, 'colocalization')}.")
+    log.info(
+        f"Colocalization completed. Results saved to {os.path.join(save_dir, 'colocalization')}."
+    )
 
 
 if __name__ == "__main__":
     # For debugging purposes
-    model = get_vgg16("checkpoints/checkpoint_vgg16_celeba.pth", pretrained=True, n_class=2)
+    model = get_vgg16(
+        "checkpoints/checkpoint_vgg16_celeba.pth", pretrained=True, n_class=2
+    )
     canonizers = [VGGCanonizer()]
     layer = "features.28"
     device = torch.device("mps")
     model.to(device)
     dataset = get_dataset("celeba")(["/Users/erogullari/datasets/"])
     concepts = dataset.get_concept_names()
-    cavs = torch.load("checkpoints/scav_vgg16_celeba.pth", weights_only=True)["weights"].squeeze().to(device)
+    cavs = (
+        torch.load("checkpoints/scav_vgg16_celeba.pth", weights_only=True)["weights"]
+        .squeeze()
+        .to(device)
+    )
 
     # Sample some data points
     n_samples = 5
     sample_ids = random.sample(range(len(dataset)), n_samples)
     samples = [dataset[i][0].unsqueeze(0) for i in sample_ids]
-    samples = torch.vstack(samples)         # Shape [n_samples, 3, 224, 224]
+    samples = torch.vstack(samples)  # Shape [n_samples, 3, 224, 224]
     samples.requires_grad_()
 
     concept_id = 5
-    heatmaps = get_localization(cavs[concept_id].unsqueeze(0), samples, model, canonizers, layer, 'max', device).unsqueeze(1) # Shape [n_samples, 224, 224]
+    heatmaps = get_localization(
+        cavs[concept_id].unsqueeze(0), samples, model, canonizers, layer, "max", device
+    ).unsqueeze(
+        1
+    )  # Shape [n_samples, 224, 224]
     titles = ["Original Image", "Heatmap"]
     for i in range(n_samples):
-        fig = visualize_heatmaps(samples[i].detach(), heatmaps[i, :, :, :], subplots_size=(1,2), suptitle=f"Heatmaps for {concepts[concept_id]}")
+        fig = visualize_heatmaps(
+            samples[i].detach(),
+            heatmaps[i, :, :, :],
+            subplots_size=(1, 2),
+            suptitle=f"Heatmaps for {concepts[concept_id]}",
+        )
         fig.savefig(f"results/tmp/heatmaps_{i}.png")
