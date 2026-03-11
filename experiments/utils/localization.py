@@ -12,7 +12,7 @@ import logging
 import random
 import os
 import hydra
-from typing import List
+from typing import Sequence
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from models import get_fn_model_loader, get_canonizer, get_vgg16
@@ -41,14 +41,19 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
         return Path(checkpoint_path)
 
 
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
+
+
 def get_localization(
     cav: torch.Tensor,
     x: torch.Tensor,
     model: nn.Module,
-    canonizers: List[Canonizer],
+    canonizers: Sequence[Canonizer],
     layer: str,
     cav_mode: str = "full",
     device: torch.device | str = "cpu",
+    model_name: str = "",
 ) -> torch.Tensor:
     """Generate heatmaps for input x using the provided CAVs and model.
     Args:
@@ -59,9 +64,31 @@ def get_localization(
         layer (str): The layer of the model to be used for heatmap generation.
         cav_mode (str): Mode of CAV, e.g., 'full' or 'max' or 'avg'.
         device (torch.device | str): Device to perform computations on.
+        model_name (str): Name of the model, used to select the attribution strategy.
     Returns:
         torch.Tensor: Generated heatmaps.
     """
+    is_vit = _is_vit_model(model_name)
+
+    if is_vit:
+        import zennit.rules as z_rules
+        from zennit.composites import LayerMapComposite
+        from torchvision.models import vision_transformer as vt_module
+        from lxt.efficient import monkey_patch, monkey_patch_zennit
+
+        monkey_patch(vt_module, verbose=False)
+        monkey_patch_zennit(verbose=False)
+
+        composite = LayerMapComposite(
+            [
+                (torch.nn.Conv2d, z_rules.Gamma(100)),
+                (torch.nn.Linear, z_rules.Gamma(0.1)),
+            ],
+            # canonizers=canonizers,
+        )
+    else:
+        composite = EpsilonPlusFlat(canonizers)
+
     attribution = CondAttribution(model)
     x = x.detach().to(device)
     activations = _get_features(
@@ -92,7 +119,6 @@ def get_localization(
             f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
         )
 
-    composite = EpsilonPlusFlat(canonizers)
     attr = attribution(
         x.to(device).requires_grad_(),
         [{}],
@@ -198,6 +224,7 @@ def localize_concepts(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]
@@ -209,6 +236,7 @@ def localize_concepts(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]
@@ -325,6 +353,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]
@@ -336,6 +365,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]
@@ -347,6 +377,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]
@@ -358,6 +389,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
             cfg.cav.layer,
             cfg.localization.cav_mode,
             device,
+            model_name=cfg.model.name,
         ).unsqueeze(
             1
         )  # Shape [n_samples_each, 1, 224, 224]

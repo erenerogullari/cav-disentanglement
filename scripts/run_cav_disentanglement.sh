@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ------------- Hyperparameters  -------------
-HARDWARE="workstation"          # Options: local, workstation
+HARDWARE="local"          # Options: local, workstation
 MODEL="vit_b_32"                # Options: vgg16, resnet18, simplenet, lenet5, vit_b_32, vit_b_16
 DATASET="celeba"                # Options: celeba, elements_standart
 LAYER="inspection_layer"        
