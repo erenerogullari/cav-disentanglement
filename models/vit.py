@@ -1,6 +1,6 @@
 import torch
 import torch.hub
-from torchvision.models import vit_b_16, vit_b_32
+from torchvision.models import vision_transformer
 
 from utils.lrp_canonizers import VITCanonizer
 
@@ -8,23 +8,24 @@ from utils.lrp_canonizers import VITCanonizer
 def get_vit_b_16(
     ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
-    return get_vit(vit_b_16, ckpt_path, pretrained, n_class)
+    weights = vision_transformer.ViT_B_16_Weights.IMAGENET1K_V1
+    model_fn = vision_transformer.vit_b_16
+
+    return get_vit(model_fn, weights, ckpt_path, pretrained, n_class)
 
 
 def get_vit_b_32(
     ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
-    return get_vit(vit_b_32, ckpt_path, pretrained, n_class)
+    weights = vision_transformer.ViT_B_32_Weights.IMAGENET1K_V1
+    model_fn = vision_transformer.vit_b_32
+
+    return get_vit(model_fn, weights, ckpt_path, pretrained, n_class)
 
 
 def get_vit(
-    model_fn, ckpt_path=None, pretrained=True, n_class: int = None
+    model_fn, weights=None, ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
-    if pretrained:
-        weights = "IMAGENET1K_V1"
-    else:
-        weights = None
-
     model = model_fn(weights=weights)
 
     if n_class and n_class != 1000:

@@ -19,11 +19,12 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def _get_features(batch, layer_name, attribution, canonizers, cav_mode, device):
-    compost = EpsilonPlusFlat(canonizers=canonizers)
+def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
     batch.requires_grad = True
     dummy_cond = [{"y": 0} for _ in range(len(batch))]
-    attr = attribution(batch.to(device), dummy_cond, compost, record_layer=[layer_name])
+    attr = attribution(
+        batch.to(device), dummy_cond, composite, record_layer=[layer_name]
+    )
     if cav_mode == "full":
         features = attr.activations[layer_name]
     elif cav_mode == "max":

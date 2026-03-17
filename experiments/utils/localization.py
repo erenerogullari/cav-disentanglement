@@ -23,6 +23,8 @@ from experiments.utils.activations import _get_features, extract_latents
 from experiments.utils.utils import get_save_dir
 from hydra.utils import get_original_cwd
 from pathlib import Path
+from torchvision.models import vision_transformer
+from lxt.efficient import monkey_patch, monkey_patch_zennit
 
 log = logging.getLogger(__name__)
 
@@ -68,16 +70,10 @@ def get_localization(
     Returns:
         torch.Tensor: Generated heatmaps.
     """
-    is_vit = _is_vit_model(model_name)
 
-    if is_vit:
+    if _is_vit_model(model_name):
         import zennit.rules as z_rules
         from zennit.composites import LayerMapComposite
-        from torchvision.models import vision_transformer as vt_module
-        from lxt.efficient import monkey_patch, monkey_patch_zennit
-
-        monkey_patch(vt_module, verbose=False)
-        monkey_patch_zennit(verbose=False)
 
         composite = LayerMapComposite(
             [
@@ -86,13 +82,14 @@ def get_localization(
             ],
             # canonizers=canonizers,
         )
+
     else:
         composite = EpsilonPlusFlat(canonizers)
 
     attribution = CondAttribution(model)
     x = x.detach().to(device)
     activations = _get_features(
-        x.to(device), layer, attribution, canonizers, cav_mode="full", device=device
+        x.to(device), layer, attribution, composite, cav_mode="full", device=device
     ).detach()
     activations = activations.to(device)
     cav = cav.to(device)
@@ -172,6 +169,9 @@ def localize_concepts(cfg: DictConfig) -> None:
 
     # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
+    if _is_vit_model(cfg.model.name):
+        monkey_patch(vision_transformer, verbose=False)
+        monkey_patch_zennit(verbose=False)
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     model = get_fn_model_loader(cfg.model.name)(
         ckpt_path=(
@@ -292,6 +292,9 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
 
     # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
+    if _is_vit_model(cfg.model.name):
+        monkey_patch(vision_transformer, verbose=False)
+        monkey_patch_zennit(verbose=False)
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     model = get_fn_model_loader(cfg.model.name)(
         ckpt_path=(
