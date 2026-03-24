@@ -12,7 +12,6 @@ import seaborn as sns
 import numpy as np
 from utils.metrics import calculate_metrics
 from torchvision.models import vision_transformer
-from lxt.efficient import monkey_patch, monkey_patch_zennit
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +60,8 @@ def load_base_model(
     device = torch.device(device)
 
     if _is_vit_model(cfg.model.name):
+        from lxt.efficient import monkey_patch, monkey_patch_zennit
+
         monkey_patch(vision_transformer, verbose=False)
         monkey_patch_zennit(verbose=False)
 

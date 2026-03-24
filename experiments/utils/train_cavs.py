@@ -34,27 +34,16 @@ from experiments.utils.utils import (
     save_results,
     save_plots,
 )
-from experiments.utils.utils import (
-    get_save_dir,
-    initialize_weights,
-    save_results,
-    save_plots,
-)
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
 from pathlib import Path
+from torchvision.models import vision_transformer
 
 log = logging.getLogger(__name__)
 
 
-def seed_everything(seed: Optional[int]) -> None:
-    if seed is None:
-        return
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
 
 
 def seed_everything(seed: Optional[int]) -> None:
@@ -87,6 +76,12 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
 def _load_model(
     cfg_model: DictConfig, ckpt_path: Path, device: torch.device
 ) -> nn.Module:
+    if _is_vit_model(cfg_model.name):
+        from lxt.efficient import monkey_patch, monkey_patch_zennit  # type: ignore
+
+        monkey_patch(vision_transformer, verbose=False)
+        monkey_patch_zennit(verbose=False)
+
     model_loader = get_fn_model_loader(cfg_model.name)
     loader_kwargs = {
         "ckpt_path": (
@@ -122,8 +117,10 @@ def train_test_split(cfg, dataset, x_latent, labels):
         test_split=cfg.train.test_ratio,
         seed=cfg.train.random_seed,
     )
-    train_data = x_latent[idxs_train]
-    train_labels = labels[idxs_train]
+    # train_data = x_latent[idxs_train]
+    # train_labels = labels[idxs_train]
+    train_data = x_latent
+    train_labels = labels
     val_data = x_latent[idxs_val]
     val_labels = labels[idxs_val]
     test_data = x_latent[idxs_test]

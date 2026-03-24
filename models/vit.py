@@ -8,7 +8,10 @@ from utils.lrp_canonizers import VITCanonizer
 def get_vit_b_16(
     ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
-    weights = vision_transformer.ViT_B_16_Weights.IMAGENET1K_V1
+    if pretrained:
+        weights = vision_transformer.ViT_B_16_Weights.IMAGENET1K_V1
+    else:
+        weights = None
     model_fn = vision_transformer.vit_b_16
 
     return get_vit(model_fn, weights, ckpt_path, pretrained, n_class)
@@ -17,14 +20,17 @@ def get_vit_b_16(
 def get_vit_b_32(
     ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
-    weights = vision_transformer.ViT_B_32_Weights.IMAGENET1K_V1
+    if pretrained:
+        weights = vision_transformer.ViT_B_32_Weights.IMAGENET1K_V1
+    else:
+        weights = None
     model_fn = vision_transformer.vit_b_32
 
     return get_vit(model_fn, weights, ckpt_path, pretrained, n_class)
 
 
 def get_vit(
-    model_fn, weights=None, ckpt_path=None, pretrained=True, n_class: int = None
+    model_fn, weights, ckpt_path=None, pretrained=True, n_class: int = None
 ) -> torch.nn.Module:
     model = model_fn(weights=weights)
 

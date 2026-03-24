@@ -1,0 +1,29 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            // "program": "${file}",
+            "console": "integratedTerminal",
+            // Custom 
+            "python": "/home/erogullari/miniconda3/envs/lxt/bin/python",
+            "module": "experiments.run_cav_disentanglement", 
+            "args": [
+                "hardware@train=workstation",
+                "model=vit_b_32",
+                "dataset=celeba",
+                "cav_model@cav=pattern_cav",
+                "cav.layer=inspection_layer",
+                "train.num_epochs=100",
+                "train.learning_rate=0.00001",
+                "cav.alpha=0.1"
+            ],
+            
+        }
+    ]
+}

@@ -95,7 +95,7 @@ def evaluate_concept_heatmaps(
 
     else:
         canonizers = get_canonizer(cfg.model.name)
-        composite = EpsilonPlusFlat(canonizers)
+        composite = EpsilonPlusFlat(canonizers=canonizers)
 
     attribution = CondAttribution(classification_model)
 

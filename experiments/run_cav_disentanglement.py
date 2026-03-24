@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 @hydra.main(
-    version_base=None, config_path="../configs", config_name="cav_disentanglement"
+    version_base=None, config_path="../configs", config_name="cav_disentanglement_debug"
 )
 def run(cfg: DictConfig) -> None:
     """Main function to run the disentangle_cavs experiment.
@@ -26,7 +26,7 @@ def run(cfg: DictConfig) -> None:
 
     # 1. Train CAVs
     log.info("1. Training CAVs:")
-    # train_cavs(cfg)
+    train_cavs(cfg)
 
     # 2. Concept Localization
     if len(cfg.localization.concept_ids) > 0:

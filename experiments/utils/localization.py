@@ -24,7 +24,7 @@ from experiments.utils.utils import get_save_dir
 from hydra.utils import get_original_cwd
 from pathlib import Path
 from torchvision.models import vision_transformer
-from lxt.efficient import monkey_patch, monkey_patch_zennit
+from lxt.efficient import monkey_patch, monkey_patch_zennit  # type: ignore
 
 log = logging.getLogger(__name__)
 

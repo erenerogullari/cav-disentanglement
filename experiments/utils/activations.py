@@ -6,6 +6,7 @@ import pickle
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict, List, Tuple, Optional
 from crp.attribution import CondAttribution
+from zennit import canonizers
 from zennit.composites import EpsilonPlusFlat
 from datasets import get_dataset
 from models import get_fn_model_loader, get_canonizer
@@ -17,6 +18,10 @@ from hydra.utils import get_original_cwd
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
 
 
 def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
@@ -32,7 +37,7 @@ def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
         features = acts.flatten(start_dim=2).max(2)[0]
     elif cav_mode == "avg":
         acts = attr.activations[layer_name]
-        features = acts.flatten(start_dim=2).mean(2)[0]
+        features = acts.flatten(start_dim=2).mean(2)
     else:
         raise ValueError(
             f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
@@ -99,8 +104,24 @@ def extract_latents(
             num_workers=cfg.train.num_workers,
             shuffle=False,
         )
+
+        if _is_vit_model(cfg.model.name):
+            import zennit.rules as z_rules
+            from zennit.composites import LayerMapComposite
+
+            composite = LayerMapComposite(
+                [
+                    (torch.nn.Conv2d, z_rules.Gamma(100)),
+                    (torch.nn.Linear, z_rules.Gamma(0.1)),
+                ],
+                # canonizers=canonizers,
+            )
+
+        else:
+            canonizers = get_canonizer(cfg.model.name)
+            composite = EpsilonPlusFlat(canonizers=canonizers)
+
         attribution = CondAttribution(model)
-        canonizer = get_canonizer(cfg.model.name)
 
         x_latent_all = []
         for batch in tqdm(dataloader):
@@ -109,7 +130,7 @@ def extract_latents(
                 x,
                 cfg.cav.layer,
                 attribution,
-                canonizer,
+                composite,
                 cfg.cav.cav_mode,
                 device=cfg.train.device,
             )
