@@ -7,14 +7,14 @@ MODEL="vgg16"           # Options: vit_b_32, vit_b_16, vgg16
 LAYER="features.29"     
 CKPT_PATH="/media/erogullari/checkpoints/checkpoint_vgg16_celeba_attacked.pth"
 
-CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav
+CAV_MODEL="multi_cav"         # Options: pattern_cav, multi_cav
 CAV_MODE="max"                # Options: full, max, avg
 OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="orthogonality"            # Options: None, orthogonality, auc
 NUM_EPOCHS="50"
 LR="0.0001"                    # Learning rate for CAV optimization
-ALPHAS=("0.1" "1" "10" "100")
-# ALPHAS=("100")
+# ALPHAS=("0.1" "1" "10" "100")
+ALPHAS=("1000")
 
 for ALPHA in "${ALPHAS[@]}"; do
   echo "Running model correction experiment with alpha=${ALPHA}"

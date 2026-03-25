@@ -23,6 +23,7 @@ from experiments.model_correction.utils import (
     build_clarc_kwargs,
     plot_concept_similarities,
     plot_metric_comparison,
+    plot_metric_comparison_std,
     plot_confusion_matrices,
 )
 from experiments.utils.activations import extract_latents
@@ -236,7 +237,7 @@ def evaluate_model_correction(
         ]
     )
 
-    df_filtered = df[df["Metric"].isin(selected_metrics)]
+    df_filtered = df.loc[df["Metric"].isin(selected_metrics)].copy()
     df_filtered["Category"] = df_filtered["Metric"].str.extract(
         r"_(clean|attacked|ch)"
     )[0]
@@ -262,6 +263,9 @@ def evaluate_model_correction(
         pickle.dump(metrics_payload, f)
     with open(results_dir / "confusion_per_model.pkl", "wb") as f:
         pickle.dump(confusion_payload, f)
+    plot_metric_comparison_std(
+        df_filtered, results_dir, metrics_payload, confusion_payload
+    )
 
     for cm, name in [
         (cm_vanilla, "vanilla"),
