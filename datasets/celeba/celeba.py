@@ -68,8 +68,8 @@ class CelebADataset(BaseDataset):
                 self.attributes[attr].values == 1
             )[0]
 
-        # ATTR_LABEL = "Blond_Hair"
-        ATTR_LABEL = "Wearing_Necktie"
+        ATTR_LABEL = "Blond_Hair"
+        # ATTR_LABEL = "Wearing_Necktie"
         labels = self.attributes[ATTR_LABEL].values
 
         self.metadata = pd.DataFrame(

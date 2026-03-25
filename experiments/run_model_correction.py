@@ -4,9 +4,14 @@ import torch
 import logging
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from experiments.model_correction import evaluate_model_correction, evaluate_concept_heatmaps, get_dir_models
+from experiments.model_correction import (
+    evaluate_model_correction,
+    evaluate_concept_heatmaps,
+    get_dir_models,
+)
 
 log = logging.getLogger(__name__)
+
 
 @hydra.main(version_base=None, config_path="../configs", config_name="model_correction")
 def run(cfg: DictConfig) -> None:
@@ -14,7 +19,7 @@ def run(cfg: DictConfig) -> None:
     Args:
         cfg (DictConfig): Configuration object containing all parameters.
     Returns:
-        None  
+        None
     """
     device = cfg.train.device
     log.info(f"Using device: {device}")
@@ -29,6 +34,7 @@ def run(cfg: DictConfig) -> None:
     evaluate_concept_heatmaps(cfg, dir_model, base_model)
 
     log.info("Experiment succesfully completed.")
+
 
 if __name__ == "__main__":
     run()

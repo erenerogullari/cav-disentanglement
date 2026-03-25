@@ -30,6 +30,30 @@ from datasets import get_dataset
 log = logging.getLogger(__name__)
 
 
+def _add_concept_relevance_errorbars(
+    ax: plt.Axes, sem_lookup: dict[str, float], cav_order: list[str]
+) -> None:
+    for cav_name, container in zip(cav_order, ax.containers[: len(cav_order)]):
+        if len(container) == 0:
+            continue
+        sem = sem_lookup.get(cav_name)
+        if sem is None or np.isnan(sem):
+            continue
+        patch = container[0]
+        x = patch.get_x() + patch.get_width() / 2
+        y = patch.get_height()
+        ax.errorbar(
+            x,
+            y,
+            yerr=sem,
+            fmt="none",
+            ecolor="black",
+            elinewidth=1,
+            capsize=4,
+            capthick=1,
+        )
+
+
 def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
     artifact_keys = cfg.heatmaps.artifacts
     selected_ids = None
@@ -47,6 +71,10 @@ def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
     if idxs_test is not None:
         selected_ids = np.intersect1d(selected_ids, np.array(idxs_test))
     return selected_ids
+
+
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
 
 
 def evaluate_concept_heatmaps(
@@ -76,9 +104,24 @@ def evaluate_concept_heatmaps(
         )
         return
     ds_subset = dataset.get_subset_by_idxs(sample_ids.tolist())
+
+    if _is_vit_model(cfg.model.name):
+        import zennit.rules as z_rules
+        from zennit.composites import LayerMapComposite
+
+        composite = LayerMapComposite(
+            [
+                (torch.nn.Conv2d, z_rules.Gamma(100)),
+                (torch.nn.Linear, z_rules.Gamma(0.1)),
+            ],
+            # canonizers=canonizers,
+        )
+
+    else:
+        canonizers = get_canonizer(cfg.model.name)
+        composite = EpsilonPlusFlat(canonizers=canonizers)
+
     attribution = CondAttribution(classification_model)
-    canonizers = get_canonizer(cfg.model.name)
-    composite = EpsilonPlusFlat(canonizers)
 
     save_dir = get_save_dir(cfg)
     results_dir = save_dir / "results"
@@ -125,6 +168,7 @@ def evaluate_concept_heatmaps(
                 continue
             loc = locs[cname]
             concept_rel = (loc * gts[cname]).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
+            concept_rel_np = concept_rel.numpy()
             loc_binary = binarize_heatmaps(loc, thresholding="otsu")
             jaccards = np.array(
                 [
@@ -136,7 +180,10 @@ def evaluate_concept_heatmaps(
                 ]
             )
             results_quant[f"iou_{cname}_{cav_name}"] = jaccards.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}"] = concept_rel.mean().item()
+            results_quant[f"concept_rel_{cname}_{cav_name}"] = concept_rel_np.mean()
+            results_quant[f"concept_rel_{cname}_{cav_name}_sem"] = (
+                concept_rel_np.std() / np.sqrt(len(concept_rel_np))
+            )
 
     data_plot = pd.DataFrame(
         data=[
@@ -148,6 +195,24 @@ def evaluate_concept_heatmaps(
     vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
     savepath_quant = results_dir / f"concept_relevance"
     plot_concept_relevance(data_plot, vmax, savepath_quant)
+    data_plot_std = pd.DataFrame(
+        data=[
+            (
+                "Baseline",
+                results_quant.get(f"concept_rel_timestamp_Baseline", 0.0),
+                results_quant.get(f"concept_rel_timestamp_Baseline_sem", 0.0),
+            ),
+            (
+                "Orthogonal",
+                results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0),
+                results_quant.get(f"concept_rel_timestamp_Orthogonal_sem", 0.0),
+            ),
+        ],
+        columns=["CAV", "Concept Relevance", "SEM"],
+    )
+    plot_concept_relevance_std(
+        data_plot_std, vmax, results_dir / "concept_relevance_std"
+    )
 
     with open(results_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
@@ -169,6 +234,53 @@ def plot_concept_relevance(
         fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
         for ending in ["png", "pdf"]
     ]
+    plt.close(fig)
+
+
+def plot_concept_relevance_std(
+    data_plot: pd.DataFrame, vmax: float, savename: Path
+) -> None:
+    sns.set_style("whitegrid")
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    cav_order = ["Baseline", "Orthogonal"]
+    ordered_df = data_plot.set_index("CAV").reindex(cav_order).reset_index()
+    sns.barplot(
+        x="CAV",
+        y="Concept Relevance",
+        hue="CAV",
+        data=ordered_df,
+        order=cav_order,
+        hue_order=cav_order,
+        errorbar=None,
+        ax=ax,
+    )
+    _add_concept_relevance_errorbars(
+        ax,
+        {row["CAV"]: float(row["SEM"]) for _, row in ordered_df.iterrows()},
+        cav_order,
+    )
+
+    ax.set_ylabel("Concept Relevance")
+    ymax = float((ordered_df["Concept Relevance"] + ordered_df["SEM"]).max())
+    vmax_plot = max(vmax, ymax + 0.01)
+    ymin = 0.25 if float(ordered_df["Concept Relevance"].min()) >= 0.25 else 0.0
+    if ymin == 0.25:
+        ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
+        if vmax_plot >= 0.5:
+            ticks.append(0.5)
+    else:
+        vmax_plot = max(0.05, float(np.ceil(vmax_plot / 0.05) * 0.05))
+        ticks = np.arange(ymin, vmax_plot + 1e-9, 0.05).tolist()
+    ax.set_ylim(ymin, vmax_plot)
+    ax.set_yticks(ticks)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(True)
+    [
+        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
+        for ending in ["png", "pdf"]
+    ]
+    plt.close(fig)
 
 
 def compute_concept_relevances(

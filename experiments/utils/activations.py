@@ -6,6 +6,7 @@ import pickle
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict, List, Tuple, Optional
 from crp.attribution import CondAttribution
+from zennit import canonizers
 from zennit.composites import EpsilonPlusFlat
 from datasets import get_dataset
 from models import get_fn_model_loader, get_canonizer
@@ -18,11 +19,17 @@ import logging
 
 log = logging.getLogger(__name__)
 
-def _get_features(batch, layer_name, attribution, canonizers, cav_mode, device):
-    compost = EpsilonPlusFlat(canonizers=canonizers)
+
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
+
+
+def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
     batch.requires_grad = True
     dummy_cond = [{"y": 0} for _ in range(len(batch))]
-    attr = attribution(batch.to(device), dummy_cond, compost, record_layer=[layer_name])
+    attr = attribution(
+        batch.to(device), dummy_cond, composite, record_layer=[layer_name]
+    )
     if cav_mode == "full":
         features = attr.activations[layer_name]
     elif cav_mode == "max":
@@ -30,30 +37,41 @@ def _get_features(batch, layer_name, attribution, canonizers, cav_mode, device):
         features = acts.flatten(start_dim=2).max(2)[0]
     elif cav_mode == "avg":
         acts = attr.activations[layer_name]
-        features = acts.flatten(start_dim=2).mean(2)[0]
+        features = acts.flatten(start_dim=2).mean(2)
     else:
-        raise ValueError(f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'.")
+        raise ValueError(
+            f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
+        )
     return features
+
 
 def get_features(batch, config, attribution):
 
     batch.requires_grad = True
     dummy_cond = [{"y": 0} for _ in range(len(batch))]
-    record_layer=[config["layer_name"]]
-    attr = attribution(batch.to(config["device"]), dummy_cond, record_layer=record_layer)
+    record_layer = [config["layer_name"]]
+    attr = attribution(
+        batch.to(config["device"]), dummy_cond, record_layer=record_layer
+    )
     if config["cav_mode"] == "cavs_full":
         features = attr.activations[config["layer_name"]]
     else:
         # ViT support
         acts = attr.activations[config["layer_name"]]
         acts = acts if acts.dim() > 2 else acts[..., None, None]
-        acts = acts.transpose(1,3).transpose(2,3) if "swin_former" in config["model_name"] else acts
+        acts = (
+            acts.transpose(1, 3).transpose(2, 3)
+            if "swin_former" in config["model_name"]
+            else acts
+        )
         features = acts.flatten(start_dim=2).max(2)[0]
         # features = attr.activations[config["layer_name"]].flatten(start_dim=2).max(2)[0]
     return features
 
 
-def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset) -> Tuple[torch.Tensor, torch.Tensor]:
+def extract_latents(
+    cfg: DictConfig, model: nn.Module, dataset: torch.utils.data.Dataset
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Extract latent representations from a specified layer of the model for the entire dataset.
     Args:
         cfg (DictConfig): Configuration object containing model and dataset parameters.
@@ -63,7 +81,12 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
         torch.Tensor: A tensor containing the extracted latent representations.
         torch.Tensor: A tensor containing the corresponding labels.
     """
-    cache_dir = Path(get_original_cwd()) / "variables" / f"{cfg.dataset.name}" / f"{cfg.model.name}"
+    cache_dir = (
+        Path(get_original_cwd())
+        / "variables"
+        / f"{cfg.dataset.name}"
+        / f"{cfg.model.name}"
+    )
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_name = f"{cfg.cav.layer}.pth"
     cache_path = cache_dir / cache_name
@@ -75,25 +98,50 @@ def extract_latents(cfg: DictConfig, model: nn.Module, dataset: torch.utils.data
         labels = vars["labels"]
     else:
         log.info("No cached latents found. Extracting latents...")
-        dataloader = DataLoader(dataset, batch_size=cfg.train.batch_size, num_workers=cfg.train.num_workers, shuffle=False)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=cfg.train.batch_size,
+            num_workers=cfg.train.num_workers,
+            shuffle=False,
+        )
+
+        if _is_vit_model(cfg.model.name):
+            import zennit.rules as z_rules
+            from zennit.composites import LayerMapComposite
+
+            composite = LayerMapComposite(
+                [
+                    (torch.nn.Conv2d, z_rules.Gamma(100)),
+                    (torch.nn.Linear, z_rules.Gamma(0.1)),
+                ],
+                # canonizers=canonizers,
+            )
+
+        else:
+            canonizers = get_canonizer(cfg.model.name)
+            composite = EpsilonPlusFlat(canonizers=canonizers)
+
         attribution = CondAttribution(model)
-        canonizer = get_canonizer(cfg.model.name)
 
         x_latent_all = []
         for batch in tqdm(dataloader):
             x, _ = batch
-            x_latent = _get_features(x, cfg.cav.layer, attribution, canonizer, cfg.cav.cav_mode, device=cfg.train.device)
+            x_latent = _get_features(
+                x,
+                cfg.cav.layer,
+                attribution,
+                composite,
+                cfg.cav.cav_mode,
+                device=cfg.train.device,
+            )
             x_latent = x_latent.detach().cpu()
             x_latent_all.append(x_latent)
         x_latent_all = torch.cat(x_latent_all)
         labels = dataset.get_labels().clamp(min=0)  # type: ignore
 
-        vars = {
-            "encs": x_latent_all,
-            "labels": labels
-        }
+        vars = {"encs": x_latent_all, "labels": labels}
         torch.save(vars, cache_path)
-        
+
         log.info(f"Saved extracted latents to {cache_path}.")
 
     return x_latent_all, labels

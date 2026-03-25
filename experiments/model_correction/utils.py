@@ -1,4 +1,6 @@
 import logging
+import math
+import re
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Sequence
 
@@ -11,8 +13,42 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from utils.metrics import calculate_metrics
+from torchvision.models import vision_transformer
 
 log = logging.getLogger(__name__)
+
+MODEL_ORDER = ["Vanilla", "Baseline CAV", "Orthogonal CAV"]
+CATEGORY_ORDER = ["attacked", "clean"]
+MODEL_KEY_BY_DISPLAY = {
+    "Vanilla": "vanilla",
+    "Baseline CAV": "baseline",
+    "Orthogonal CAV": "orthogonal",
+}
+
+
+def _add_grouped_bar_errorbars(
+    ax: plt.Axes,
+    sem_lookup: dict[tuple[str, str], float],
+    category_order: list[str],
+    model_order: list[str],
+) -> None:
+    for model_name, container in zip(model_order, ax.containers[: len(model_order)]):
+        for category_name, patch in zip(category_order, container):
+            sem = sem_lookup.get((category_name, model_name))
+            if sem is None or np.isnan(sem):
+                continue
+            x = patch.get_x() + patch.get_width() / 2
+            y = patch.get_height()
+            ax.errorbar(
+                x,
+                y,
+                yerr=sem,
+                fmt="none",
+                ecolor="black",
+                elinewidth=1,
+                capsize=4,
+                capthick=1,
+            )
 
 
 def _select_from_mapping(cfg: Any, key: str) -> Any:
@@ -38,7 +74,13 @@ def _select_from_mapping(cfg: Any, key: str) -> Any:
     return current
 
 
-def resolve_checkpoint_path(cfg: DictConfig | Mapping[str, Any], model_name: str, dataset_name: str) -> Path:
+def _is_vit_model(model_name: str) -> bool:
+    return model_name.startswith("vit")
+
+
+def resolve_checkpoint_path(
+    cfg: DictConfig | Mapping[str, Any], model_name: str, dataset_name: str
+) -> Path:
     checkpoint_dir = Path(get_original_cwd()) / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     return checkpoint_dir / f"checkpoint_{model_name}_{dataset_name}.pth"
@@ -52,6 +94,12 @@ def load_base_model(
     """Instantiate the classification model used for CLArC evaluations."""
     device = torch.device(device)
 
+    if _is_vit_model(cfg.model.name):
+        from lxt.efficient import monkey_patch, monkey_patch_zennit
+
+        monkey_patch(vision_transformer, verbose=False)
+        monkey_patch_zennit(verbose=False)
+
     pretrained = getattr(cfg.model, "pretrained", True)
     ckpt_path = getattr(cfg.model, "ckpt_path", None)
 
@@ -60,7 +108,9 @@ def load_base_model(
         if fallback_path.exists():
             ckpt_path = str(fallback_path)
         else:
-            raise FileNotFoundError(f"No checkpoint found at {ckpt_path} or {fallback_path}.")
+            raise FileNotFoundError(
+                f"No checkpoint found at {ckpt_path} or {fallback_path}."
+            )
 
     model_loader = get_fn_model_loader(cfg.model.name)
     model = model_loader(
@@ -75,104 +125,142 @@ def load_base_model(
 def compose_clarc_config(config: DictConfig) -> dict[str, Any]:
     base_cfg = OmegaConf.to_container(config.correction, resolve=True)  # type: ignore[arg-type]
     to_filter = ["method", "dir_precomputed_data", "mode"]
-    clarc_cfg = {k: v for k, v in base_cfg.items() if k not in to_filter}    # type: ignore
+    clarc_cfg = {k: v for k, v in base_cfg.items() if k not in to_filter}  # type: ignore
     clarc_cfg["p_artifact"] = config.dataset.p_artifact
     clarc_cfg["artifact_type"] = config.dataset.artifact_type
     clarc_cfg["lsb_factor"] = getattr(config.dataset, "lsb_factor", None)
     clarc_cfg["use_backdoor_model"] = clarc_cfg.get("use_backdoor_model", None)
     clarc_cfg["dir_precomputed_data"] = config.correction.dir_precomputed_data
     clarc_cfg["mode"] = config.cav.cav_mode
-    return clarc_cfg    # type: ignore
+    return clarc_cfg  # type: ignore
 
 
 def build_clarc_kwargs(config: DictConfig, dataset: Dataset) -> dict[str, Any]:
     idxs_train, _, _ = dataset.do_train_val_test_split(  # type: ignore
         val_split=config.train.val_ratio,
         test_split=config.train.test_ratio,
-        seed=config.train.random_seed
+        seed=config.train.random_seed,
     )
     return {
-        "artifact_sample_ids": dataset.sample_ids_by_artifact[config.dataset['artifact']],   # type: ignore
-        "sample_ids": idxs_train,   # type: ignore
+        "artifact_sample_ids": dataset.sample_ids_by_artifact[config.dataset["artifact"]],  # type: ignore
+        "sample_ids": idxs_train,  # type: ignore
         "classes": dataset.classes,  # type: ignore
         "eval_mode": True,
     }
 
+
 def plot_concept_similarities(df_similarities, save_dir):
     interesting_concepts = [
-        "timestamp", 
-        "box", 
-        "Bangs", 
-        "Blond_Hair", 
-        "Wearing_Necklace", 
+        "timestamp",
+        "box",
+        "Bangs",
+        "Blond_Hair",
+        "Wearing_Necklace",
         "Pointy_Nose",
-        "Rosy_Cheeks", 
-        # "High_Cheekbones", 
-        # "Smiling", 
-        # "Black_Hair", 
-        # "Young", 
-        # "Wearing_Necklace", 
+        "Rosy_Cheeks",
+        # "High_Cheekbones",
+        # "Smiling",
+        # "Black_Hair",
+        # "Young",
+        # "Wearing_Necklace",
         # "High_Cheekbones"
     ]
 
     fig = plt.figure(figsize=(8, 3))
-    plt.axhline(0, color='black', linewidth=1, alpha=0.5, linestyle='--')  # Add this line for the horizontal line
+    plt.axhline(
+        0, color="black", linewidth=1, alpha=0.5, linestyle="--"
+    )  # Add this line for the horizontal line
 
-    sns.boxplot(df_similarities.loc[df_similarities["concept"].isin(interesting_concepts)], x="concept", y="v", hue="model")
+    sns.boxplot(
+        df_similarities.loc[df_similarities["concept"].isin(interesting_concepts)],
+        x="concept",
+        y="v",
+        hue="model",
+    )
     plt.xticks(rotation=30)
-    plt.legend(title='Model', bbox_to_anchor=(1.05, 1), loc='upper left')  
+    plt.legend(title="Model", bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.ylabel("Cos. sim. CAV/acts (w concept)")
-    [fig.savefig(save_dir / f"concept_similarities.{ending}", bbox_inches="tight") for ending in ["png", "pdf"]]
+    [
+        fig.savefig(save_dir / f"concept_similarities.{ending}", bbox_inches="tight")
+        for ending in ["png", "pdf"]
+    ]
     plt.close()
+
 
 def plot_confusion_matrices(confusion_matrices, save_dir, model_tag: str = ""):
-    metrics_attacked = calculate_metrics(confusion_matrices['attacked'])
-    metrics_clean = calculate_metrics(confusion_matrices['clean'])
+    metrics_attacked = calculate_metrics(confusion_matrices["attacked"])
+    metrics_clean = calculate_metrics(confusion_matrices["clean"])
 
     fig, axes = plt.subplots(1, 2, figsize=(8, 4))
-    sns.heatmap(confusion_matrices['attacked'], 
-                annot=True, fmt='d', cmap='Blues', cbar=True, ax=axes[0],
-                xticklabels=['Others', 'Blonde'],
-                yticklabels=['Others', 'Blonde'])
-    axes[0].set_title(f'Confusion Matrix (Attacked)\n'
-                    f'Accuracy: {metrics_attacked[0]:.2f}\n'
-                    f'False Positive Rate: {metrics_attacked[1]:.2f}\n'
-                    f'False Negative Rate: {metrics_attacked[2]:.2f}\n'
-                    f'Recall: {metrics_attacked[3]:.2f}\n'
-                    f'Precision: {metrics_attacked[4]:.2f}')
-    axes[0].set_xlabel('Predicted')
-    axes[0].set_ylabel('Actual')
+    sns.heatmap(
+        confusion_matrices["attacked"],
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=True,
+        ax=axes[0],
+        xticklabels=["Others", "Blonde"],
+        yticklabels=["Others", "Blonde"],
+    )
+    axes[0].set_title(
+        f"Confusion Matrix (Attacked)\n"
+        f"Accuracy: {metrics_attacked[0]:.2f}\n"
+        f"False Positive Rate: {metrics_attacked[1]:.2f}\n"
+        f"False Negative Rate: {metrics_attacked[2]:.2f}\n"
+        f"Recall: {metrics_attacked[3]:.2f}\n"
+        f"Precision: {metrics_attacked[4]:.2f}"
+    )
+    axes[0].set_xlabel("Predicted")
+    axes[0].set_ylabel("Actual")
 
-    sns.heatmap(confusion_matrices['clean'], 
-                annot=True, fmt='d', cmap='Blues', cbar=True, ax=axes[1],
-                xticklabels=['Others', 'Blonde'],
-                yticklabels=['Others', 'Blonde'])
-    axes[1].set_title(f'Confusion Matrix (Clean)\n'
-                    f'Accuracy: {metrics_clean[0]:.2f}\n'
-                    f'False Positive Rate: {metrics_clean[1]:.2f}\n'
-                    f'False Negative Rate: {metrics_clean[2]:.2f}\n'
-                    f'Recall: {metrics_clean[3]:.2f}\n'
-                    f'Precision: {metrics_clean[4]:.2f}')
-    axes[1].set_xlabel('Predicted')
-    axes[1].set_ylabel('Actual')
+    sns.heatmap(
+        confusion_matrices["clean"],
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=True,
+        ax=axes[1],
+        xticklabels=["Others", "Blonde"],
+        yticklabels=["Others", "Blonde"],
+    )
+    axes[1].set_title(
+        f"Confusion Matrix (Clean)\n"
+        f"Accuracy: {metrics_clean[0]:.2f}\n"
+        f"False Positive Rate: {metrics_clean[1]:.2f}\n"
+        f"False Negative Rate: {metrics_clean[2]:.2f}\n"
+        f"Recall: {metrics_clean[3]:.2f}\n"
+        f"Precision: {metrics_clean[4]:.2f}"
+    )
+    axes[1].set_xlabel("Predicted")
+    axes[1].set_ylabel("Actual")
 
     plt.tight_layout()
-    filename = "confusion_matrices" if not model_tag else f"confusion_matrices_{model_tag}"
-    [fig.savefig(save_dir / f"{filename}.{ending}", bbox_inches="tight") for ending in ["png", "pdf"]]
+    filename = (
+        "confusion_matrices" if not model_tag else f"confusion_matrices_{model_tag}"
+    )
+    [
+        fig.savefig(save_dir / f"{filename}.{ending}", bbox_inches="tight")
+        for ending in ["png", "pdf"]
+    ]
     plt.close()
 
+
 def plot_metric_comparison(df, save_dir):
-    plt.rcParams.update({'font.size': 9, 'legend.fontsize': 9, 'axes.titlesize': 11})
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
 
     metric_names = {
         "test_accuracy": "Accuracy",
-        "test_fnr": "False Positive Rate",
+        "test_fnr": "False Negative Rate",
     }
     for metric_type in ["test_accuracy", "test_fnr"]:
         sns.set_style("whitegrid")
         fig = plt.figure(figsize=(6, 4))
-        sns.barplot(x='Category', y='Value', hue='Model', 
-                    data=df[df["Metric Type"] == metric_type])
+        sns.barplot(
+            x="Category",
+            y="Value",
+            hue="Model",
+            data=df[df["Metric Type"] == metric_type],
+        )
         plt.ylabel(metric_names[metric_type])
         plt.xlabel("")
         if metric_type == "test_accuracy":
@@ -180,6 +268,95 @@ def plot_metric_comparison(df, save_dir):
             plt.yticks([0.5, 0.6, 0.7, 0.8, 0.9])
         # plt.title("")
         # plt.title(metric_names[metric_type])
-        plt.legend(title='', loc='upper left', bbox_to_anchor=(-.22, -.15),ncols=3)
-        [fig.savefig(save_dir / f"metric_comparison_{metric_type}.{ending}", bbox_inches="tight", dpi=500) for ending in ["png", "pdf"]]
+        plt.legend(title="", loc="upper left", bbox_to_anchor=(-0.22, -0.15), ncols=3)
+        [
+            fig.savefig(
+                save_dir / f"metric_comparison_{metric_type}.{ending}",
+                bbox_inches="tight",
+                dpi=500,
+            )
+            for ending in ["png", "pdf"]
+        ]
         plt.close()
+
+
+def plot_metric_comparison_std(
+    df,
+    save_dir,
+    metrics_per_model: dict[str, dict[str, float]],
+    confusion_per_model: dict[str, dict[str, Any]],
+):
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+
+    metric_names = {
+        "test_accuracy": "Accuracy",
+        "test_fnr": "False Negative Rate",
+    }
+    for metric_type in ["test_accuracy", "test_fnr"]:
+        metric_df = (
+            df.loc[df["Metric Type"] == metric_type].copy().reset_index(drop=True)
+        )
+        if metric_type == "test_accuracy":
+            metric_df["SEM"] = metric_df.apply(
+                lambda row: metrics_per_model[MODEL_KEY_BY_DISPLAY[row["Model"]]][
+                    f"test_accuracy_standard_err_{row['Category']}"
+                ],
+                axis=1,
+            )
+        else:
+            sems = []
+            for _, row in metric_df.iterrows():
+                model_key = MODEL_KEY_BY_DISPLAY[row["Model"]]
+                confusion = confusion_per_model[model_key]["test"][row["Category"]]
+                metric_match = re.search(r"test_fnr_(\d+)_", row["Metric"])
+                if metric_match is None:
+                    raise ValueError(
+                        f"Could not infer class id from metric {row['Metric']}"
+                    )
+                class_id = int(metric_match.group(1))
+                n_positives = float(confusion[class_id].sum())
+                value = float(row["Value"])
+                sem = (
+                    math.sqrt(value * (1.0 - value) / n_positives)
+                    if n_positives
+                    else 0.0
+                )
+                sems.append(sem)
+            metric_df["SEM"] = sems
+
+        sns.set_style("whitegrid")
+        fig, ax = plt.subplots(figsize=(6, 4))
+        sns.barplot(
+            x="Category",
+            y="Value",
+            hue="Model",
+            data=metric_df,
+            order=CATEGORY_ORDER,
+            hue_order=MODEL_ORDER,
+            errorbar=None,
+            ax=ax,
+        )
+        sem_lookup = {
+            (row["Category"], row["Model"]): float(row["SEM"])
+            for _, row in metric_df.iterrows()
+        }
+        _add_grouped_bar_errorbars(ax, sem_lookup, CATEGORY_ORDER, MODEL_ORDER)
+
+        ax.set_xlabel("")
+        ax.set_ylabel(metric_names[metric_type])
+        if metric_type == "test_accuracy":
+            ax.set_ylim(0.5, 0.95)
+            ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9])
+
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True)
+        ax.legend(title="", loc="upper left", bbox_to_anchor=(-0.22, -0.15), ncols=3)
+        [
+            fig.savefig(
+                save_dir / f"metric_comparison_{metric_type}_std.{ending}",
+                bbox_inches="tight",
+                dpi=500,
+            )
+            for ending in ["png", "pdf"]
+        ]
+        plt.close(fig)
