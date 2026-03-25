@@ -1,0 +1,40 @@
+defaults:
+  - _self_
+  - hardware@train: local
+  - dataset@dataset: celeba_attacked
+  - model: vgg16
+  - cav_model@cav: pattern_cav
+
+experiment:
+  name: concept_alignment
+  out: results/${experiment.name}/${model.name}/${cav.layer}/${cav.name}
+  random_seed: 42
+
+train:
+  learning_rate: 0.001
+  num_epochs: 200
+  val_ratio: 0.1
+  test_ratio: 0.1
+  random_seed: 42
+
+dataset:
+  val_split: ${train.val_ratio}
+  test_split: ${train.test_ratio}
+  seed: ${train.random_seed}
+
+cav:
+  cav_mode: max
+  layer: features.29
+  alpha: ???
+  beta: null
+  n_targets: 0
+  optimal_init: true
+  exit_criterion: orthogonality
+
+alignment:
+  split: test
+  artifact_concepts: [box, timestamp]
+  max_samples: null
+  batch_size: ${train.batch_size}
+  save_raw_scores: true
+

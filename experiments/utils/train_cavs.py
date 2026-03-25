@@ -117,10 +117,15 @@ def train_test_split(cfg, dataset, x_latent, labels):
         test_split=cfg.train.test_ratio,
         seed=cfg.train.random_seed,
     )
-    # train_data = x_latent[idxs_train]
-    # train_labels = labels[idxs_train]
-    train_data = x_latent
-    train_labels = labels
+    full_cav_experiments = ["concept_alignment", "model_correction"]
+    train_data = (
+        x_latent
+        if cfg.experiment.name in full_cav_experiments
+        else x_latent[idxs_train]
+    )
+    train_labels = (
+        labels if cfg.experiment.name in full_cav_experiments else labels[idxs_train]
+    )
     val_data = x_latent[idxs_val]
     val_labels = labels[idxs_val]
     test_data = x_latent[idxs_test]

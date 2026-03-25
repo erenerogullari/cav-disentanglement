@@ -19,6 +19,7 @@ checkpoints/
 
 # Configurations
 configs/*
+!configs/concept_alignment.yaml
 
 # Variables
 variables/
