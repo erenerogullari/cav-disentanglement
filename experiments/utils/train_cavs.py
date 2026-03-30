@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any
 import inspect
 from models import get_fn_model_loader
 from datasets import get_dataset
-from utils.cav import compute_cavs
+from utils.cav import compute_cavs, build_cav_cache_path
 from utils.metrics import (
     get_accuracy,
     get_avg_precision,
@@ -261,8 +261,18 @@ def train_cavs(
     log.info(f"Initializing CAV model: {cfg.cav.name}")
     raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
     cav_cfg = {"_target_": raw_cav_cfg["_target_"]}  # type: ignore
+    cav_cache_path = build_cav_cache_path(
+        dataset_name=cfg.dataset.name,
+        model_name=cfg.model.name,
+        layer_name=cfg.cav.layer,
+        cav_type=cfg.cav.name,
+    )
     cavs_original, bias_original = compute_cavs(
-        train_latents, train_labels, type=cfg.cav.name, normalize=True
+        train_latents,
+        train_labels,
+        type=cfg.cav.name,
+        normalize=True,
+        cache_dir=cav_cache_path,
     )
     cav_model = instantiate(
         cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu"

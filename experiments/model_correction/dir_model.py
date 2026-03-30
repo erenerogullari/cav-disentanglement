@@ -11,7 +11,7 @@ from hydra.utils import get_original_cwd, instantiate
 from experiments.utils.utils import get_save_dir
 from experiments.utils.activations import extract_latents
 from experiments.model_correction.utils import load_base_model
-from utils.cav import compute_cavs
+from utils.cav import compute_cavs, build_cav_cache_path
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +34,19 @@ def load_dir_model(target: str, state_path: Path) -> torch.nn.Module:
 def load_base_cav_model(
     cfg: DictConfig, activations: torch.Tensor, labels: torch.Tensor
 ) -> nn.Module:
-    cavs, bias = compute_cavs(activations, labels, type=cfg.cav.name, normalize=True)
+    cav_cache_path = build_cav_cache_path(
+        dataset_name=cfg.dataset.name,
+        model_name=cfg.model.name,
+        layer_name=cfg.cav.layer,
+        cav_type=cfg.cav.name,
+    )
+    cavs, bias = compute_cavs(
+        activations,
+        labels,
+        type=cfg.cav.name,
+        normalize=True,
+        cache_dir=cav_cache_path,
+    )
     dir_model = instantiate(
         {"_target_": cfg.cav._target_},
         n_concepts=cavs.shape[0],

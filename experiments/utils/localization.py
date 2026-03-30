@@ -18,7 +18,7 @@ from tqdm import tqdm
 from models import get_fn_model_loader, get_canonizer, get_vgg16
 from datasets import get_dataset
 from utils.visualizations import visualize_heatmaps, visualize_heatmap_pair
-from utils.cav import compute_cavs
+from utils.cav import compute_cavs, build_cav_cache_path
 from experiments.utils.activations import _get_features, extract_latents
 from experiments.utils.utils import get_save_dir
 from hydra.utils import get_original_cwd
@@ -197,8 +197,18 @@ def localize_concepts(cfg: DictConfig) -> None:
         )
     cavs = torch.load(os.path.join(save_dir, "cavs.pt"), weights_only=True)
     x_latent, labels = extract_latents(cfg, model, dataset)
+    cav_cache_path = build_cav_cache_path(
+        dataset_name=cfg.dataset.name,
+        model_name=cfg.model.name,
+        layer_name=cfg.cav.layer,
+        cav_type=cfg.cav.name,
+    )
     cavs_original, bias_original = compute_cavs(
-        x_latent, labels, type=cfg.cav.name, normalize=True
+        x_latent,
+        labels,
+        type=cfg.cav.name,
+        normalize=True,
+        cache_dir=cav_cache_path,
     )
 
     canonizers = get_canonizer(cfg.model.name)
@@ -320,8 +330,18 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
         )
     cavs = torch.load(os.path.join(save_dir, "cavs.pt"), weights_only=True)
     x_latent, labels = extract_latents(cfg, model, dataset)
+    cav_cache_path = build_cav_cache_path(
+        dataset_name=cfg.dataset.name,
+        model_name=cfg.model.name,
+        layer_name=cfg.cav.layer,
+        cav_type=cfg.cav.name,
+    )
     cavs_original, bias_original = compute_cavs(
-        x_latent, labels, type=cfg.cav.name, normalize=True
+        x_latent,
+        labels,
+        type=cfg.cav.name,
+        normalize=True,
+        cache_dir=cav_cache_path,
     )
 
     canonizers = get_canonizer(cfg.model.name)
