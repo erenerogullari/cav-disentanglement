@@ -4,20 +4,15 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from tqdm import tqdm
-import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 import logging
 import os
 import copy
 import random
 from typing import Optional, Dict, Any
 import inspect
-import random
-from typing import Optional, Dict, Any
-import inspect
 from models import get_fn_model_loader
-from datasets import get_dataset
 from utils.cav import compute_cavs, build_cav_cache_path
 from utils.metrics import (
     get_accuracy,
@@ -25,7 +20,6 @@ from utils.metrics import (
     get_uniqueness,
     compute_auc_performance,
     get_auconf,
-    get_confusion_matrices,
 )
 from utils.sim_matrix import reorder_similarity_matrix
 from experiments.utils.utils import (
@@ -33,6 +27,10 @@ from experiments.utils.utils import (
     initialize_weights,
     save_results,
     save_plots,
+)
+from experiments.utils.cav_model_utils import (
+    instantiate_cav_model,
+    validate_precomputed_g_sae_cache,
 )
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
@@ -259,14 +257,15 @@ def train_cavs(
 
     # Initialize CAV model and weights (alpha)
     log.info(f"Initializing CAV model: {cfg.cav.name}")
-    raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
-    cav_cfg = {"_target_": raw_cav_cfg["_target_"]}  # type: ignore
     cav_cache_path = build_cav_cache_path(
         dataset_name=cfg.dataset.name,
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
     )
+    if cfg.cav.name == "G_SAE":
+        validate_precomputed_g_sae_cache(cav_cache_path)
+
     cavs_original, bias_original = compute_cavs(
         train_latents,
         train_labels,
@@ -274,16 +273,18 @@ def train_cavs(
         normalize=True,
         cache_dir=cav_cache_path,
     )
-    cav_model = instantiate(
-        cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu"
-    )
-
-    cav_model = instantiate(
-        cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu"
+    cav_model = instantiate_cav_model(
+        cfg.cav,
+        n_concepts=n_concepts,
+        n_features=n_features,
+        device="cpu",
     )
 
     if cfg.cav.optimal_init:
-        cav_model.load_state_dict({"weights": cavs_original, "bias": bias_original})
+        if hasattr(cav_model, "set_params"):
+            cav_model.set_params(cavs_original, bias_original)
+        else:
+            cav_model.load_state_dict({"weights": cavs_original, "bias": bias_original})
     cav_model = cav_model.to(device)
     C = cavs_original @ cavs_original.T
     _, order = reorder_similarity_matrix(C.detach().cpu().numpy())

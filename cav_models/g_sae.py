@@ -33,7 +33,7 @@ class G_SAE(nn.Module):
         n_features: int,
         device: str = "cpu",
         latent_factor: float = 4.0,
-        topk_ratio: float = 0.10,
+        topk_ratio: float = 0.025,
         n_latents: int | None = None,
         topk: int | None = None,
         recon_weight: float = 1.0,

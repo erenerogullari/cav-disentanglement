@@ -2,6 +2,7 @@ import hydra
 import logging
 from omegaconf import DictConfig
 from experiments.concept_alignment import evaluate_concept_alignment
+from experiments.model_correction import evaluate_concept_heatmaps
 from experiments.model_correction.dir_model import get_dir_models
 
 log = logging.getLogger(__name__)
@@ -22,8 +23,8 @@ def run(cfg: DictConfig) -> None:
     log.info("2. Evaluating concept alignment.")
     evaluate_concept_alignment(cfg, dir_model, base_model)
 
-    log.info("3. Evaluating concept localization.")
-    # evaluate_concept_localization(cfg, dir_model, base_model)
+    log.info("3. Evaluating concept heatmaps.")
+    evaluate_concept_heatmaps(cfg, dir_model, base_model)
 
     log.info("Experiment succesfully completed.")
 

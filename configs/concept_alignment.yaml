@@ -38,3 +38,6 @@ alignment:
   batch_size: ${train.batch_size}
   save_raw_scores: true
 
+heatmaps:
+  concepts: [box, timestamp]
+  artifacts: [box, timestamp]
