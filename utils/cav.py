@@ -171,14 +171,18 @@ def build_cav_cache_path(
     layer_name: str,
     cav_type: str,
     root_dir: str | Path = "variables",
+    random_seed: int | None = None,
 ) -> Path:
     safe_layer = str(layer_name).replace("/", "__").strip() or "no_layer"
+    file_stem = str(cav_type)
+    if cav_type == "random_cav" and random_seed is not None:
+        file_stem = f"{file_stem}_seed{int(random_seed)}"
     return (
         Path(root_dir)
         / str(dataset_name)
         / str(model_name)
         / safe_layer
-        / f"{cav_type}.pth"
+        / f"{file_stem}.pth"
     )
 
 
@@ -278,15 +282,17 @@ def compute_cavs(
     type: str = "pattern_cav",
     normalize: bool = True,
     cache_dir: str | Path | None = None,
+    random_seed: int | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Computes all concept activation vectors (CAVs) together for a set of vectors and targets.
 
     :param vecs:    torch.Tensor of shape (n_samples, n_features)
     :param targets: torch.Tensor of shape (n_samples, n_concepts)
-    :param type:    str, type of CAV to compute. One of ["pattern_cav", "multi_cav", "svm_cav", "log_cav"]
+    :param type:    str, type of CAV to compute. One of ["pattern_cav", "multi_cav", "svm_cav", "log_cav", "random_cav"]
     :param normalize: bool, whether to normalize the CAVs to unit length
     :param cache_dir: Optional cache path. If provided, CAVs are loaded/saved from/to this file.
+    :param random_seed: Optional seed used by stochastic CAV types such as "random_cav".
     :return:        tuple of (cavs, bias)
     """
     cache_path = Path(cache_dir) if cache_dir is not None else None
@@ -442,6 +448,22 @@ def compute_cavs(
 
         cavs = cavs.to(vecs.device)
         bias = bias.to(vecs.device)
+
+    elif type == "random_cav":
+        generator = torch.Generator(device="cpu")
+        if random_seed is not None:
+            generator.manual_seed(int(random_seed))
+
+        cavs = torch.randn(
+            (targets.shape[1], vecs.shape[1]),
+            generator=generator,
+            dtype=vecs.dtype,
+        ).to(vecs.device)
+        bias = torch.zeros(targets.shape[1], device=vecs.device, dtype=vecs.dtype)
+
+        if normalize:
+            norms = torch.norm(cavs, dim=1, keepdim=True).clamp_min(1e-12)
+            cavs = cavs / norms
 
     else:
         raise KeyError(f"Unknown CAV type: {type}")

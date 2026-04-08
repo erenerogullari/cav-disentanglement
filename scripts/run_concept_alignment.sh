@@ -7,7 +7,7 @@ MODEL="vgg16"                   # Options: vit_b_32, vit_b_16, vgg16, resnet18, 
 LAYER="features.29"
 CKPT_PATH="checkpoints/checkpoint_vgg16_celeba_attacked.pth"
 
-# CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav, svm_cav, log_cav, G_SAE
+# CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav, svm_cav, log_cav, G_SAE, random_cav
 CAV_MODE="max"                  # Options: full, max, avg
 OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="orthogonality"  # Options: None, orthogonality, auc
@@ -21,6 +21,7 @@ CAV_MODELS=(
   # "multi_cav"
   # "svm_cav"
   # "log_cav"
+  "random_cav"
   "G_SAE"
 )
 ALPHAS=("0.1" "1" "10" "100" "1000")

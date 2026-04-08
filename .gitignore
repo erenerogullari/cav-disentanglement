@@ -20,16 +20,13 @@ checkpoints/
 # Configurations
 configs/*
 !configs/concept_alignment.yaml
+!configs/cav_model/random_cav.yaml
 
 # Variables
 variables/
 
-<<<<<<< HEAD
-=======
 # Other
 # notebooks/train_model_elements.ipynb
-
->>>>>>> d80d7d74ea61532c08ecb0d45bbe22a18d9df1a3
 # DS_Store files
 .DS_Store
 

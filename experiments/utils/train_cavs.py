@@ -262,6 +262,7 @@ def train_cavs(
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
+        random_seed=cfg.train.random_seed,
     )
     if cfg.cav.name == "G_SAE":
         validate_precomputed_g_sae_cache(cav_cache_path)
@@ -272,6 +273,7 @@ def train_cavs(
         type=cfg.cav.name,
         normalize=True,
         cache_dir=cav_cache_path,
+        random_seed=cfg.train.random_seed,
     )
     cav_model = instantiate_cav_model(
         cfg.cav,

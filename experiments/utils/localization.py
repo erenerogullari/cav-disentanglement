@@ -202,6 +202,7 @@ def localize_concepts(cfg: DictConfig) -> None:
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
+        random_seed=cfg.train.random_seed,
     )
     cavs_original, bias_original = compute_cavs(
         x_latent,
@@ -209,6 +210,7 @@ def localize_concepts(cfg: DictConfig) -> None:
         type=cfg.cav.name,
         normalize=True,
         cache_dir=cav_cache_path,
+        random_seed=cfg.train.random_seed,
     )
 
     canonizers = get_canonizer(cfg.model.name)
@@ -335,6 +337,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
+        random_seed=cfg.train.random_seed,
     )
     cavs_original, bias_original = compute_cavs(
         x_latent,
@@ -342,6 +345,7 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
         type=cfg.cav.name,
         normalize=True,
         cache_dir=cav_cache_path,
+        random_seed=cfg.train.random_seed,
     )
 
     canonizers = get_canonizer(cfg.model.name)

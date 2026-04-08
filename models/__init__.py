@@ -19,7 +19,6 @@ from models.efficientnet import (
 from models.lenet import get_lenet5, get_lenet_canonizer
 from models.simplenet import get_simplenet, get_simplenet_canonizer
 from models.vit import get_vit_b_16, get_vit_b_32, get_vit_canonizer
-from models.diffae import DiffAE
 
 MODELS = {
     "vgg16": get_vgg16,

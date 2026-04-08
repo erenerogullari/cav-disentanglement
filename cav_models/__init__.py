@@ -3,3 +3,4 @@ from .multi_cav import MultiPatternCAV
 from .svm_cav import SvmCAV
 from .log_cav import LogCAV
 from .g_sae import G_SAE
+from .random_cav import RandomCAV
