@@ -17,7 +17,6 @@ from torch.utils.data import DataLoader
 from crp.attribution import CondAttribution
 from crp.image import imgify
 from models import get_canonizer
-from sklearn.metrics import jaccard_score
 from zennit.composites import EpsilonPlusFlat
 
 from experiments.model_correction.utils import load_base_model
@@ -28,9 +27,10 @@ from utils.localization import get_localizations, binarize_heatmaps
 from datasets import get_dataset
 
 log = logging.getLogger(__name__)
+CAV_PLOT_ORDER = ["Baseline", "Orthogonal"]
 
 
-def _add_concept_relevance_errorbars(
+def _add_metric_errorbars(
     ax: plt.Axes, sem_lookup: dict[str, float], cav_order: list[str]
 ) -> None:
     for cav_name, container in zip(cav_order, ax.containers[: len(cav_order)]):
@@ -75,6 +75,113 @@ def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
 
 def _is_vit_model(model_name: str) -> bool:
     return model_name.startswith("vit")
+
+
+def _metric_sem(values: np.ndarray) -> float:
+    if len(values) == 0:
+        return float("nan")
+    return float(values.std() / np.sqrt(len(values)))
+
+
+def _store_metric_stats(
+    results_quant: dict[str, float],
+    metric_name: str,
+    concept_name: str,
+    cav_name: str,
+    values: np.ndarray,
+) -> None:
+    results_quant[f"{metric_name}_{concept_name}_{cav_name}"] = float(values.mean())
+    results_quant[f"{metric_name}_{concept_name}_{cav_name}_sem"] = _metric_sem(values)
+
+
+def _build_metric_plot_frames(
+    results_quant: dict[str, float],
+    metric_name: str,
+    concept_name: str,
+    metric_label: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    data_plot = []
+    data_plot_std = []
+    for cav_name in CAV_PLOT_ORDER:
+        mean = results_quant.get(f"{metric_name}_{concept_name}_{cav_name}", 0.0)
+        sem = results_quant.get(f"{metric_name}_{concept_name}_{cav_name}_sem", 0.0)
+        data_plot.append((cav_name, mean))
+        data_plot_std.append((cav_name, mean, sem))
+    return (
+        pd.DataFrame(data_plot, columns=["CAV", metric_label]),
+        pd.DataFrame(data_plot_std, columns=["CAV", metric_label, "SEM"]),
+    )
+
+
+def _save_metric_plot(
+    data_plot: pd.DataFrame,
+    metric_label: str,
+    savename: Path,
+    ymin: float,
+    ymax: float,
+    ticks: list[float],
+) -> None:
+    sns.set_style("whitegrid")
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    sns.barplot(
+        x="CAV",
+        y=metric_label,
+        hue="CAV",
+        data=data_plot,
+        order=CAV_PLOT_ORDER,
+        hue_order=CAV_PLOT_ORDER,
+        ax=ax,
+    )
+    ax.set_ylabel(metric_label)
+    ax.set_ylim(ymin, ymax)
+    ax.set_yticks(ticks)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(True)
+    [
+        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
+        for ending in ["png", "pdf"]
+    ]
+    plt.close(fig)
+
+
+def _save_metric_plot_std(
+    data_plot: pd.DataFrame,
+    metric_label: str,
+    savename: Path,
+    ymin: float,
+    ymax: float,
+    ticks: list[float],
+) -> None:
+    sns.set_style("whitegrid")
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    ordered_df = data_plot.set_index("CAV").reindex(CAV_PLOT_ORDER).reset_index()
+    sns.barplot(
+        x="CAV",
+        y=metric_label,
+        hue="CAV",
+        data=ordered_df,
+        order=CAV_PLOT_ORDER,
+        hue_order=CAV_PLOT_ORDER,
+        errorbar=None,
+        ax=ax,
+    )
+    _add_metric_errorbars(
+        ax,
+        {row["CAV"]: float(row["SEM"]) for _, row in ordered_df.iterrows()},
+        CAV_PLOT_ORDER,
+    )
+    ax.set_ylabel(metric_label)
+    ax.set_ylim(ymin, ymax)
+    ax.set_yticks(ticks)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(True)
+    [
+        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
+        for ending in ["png", "pdf"]
+    ]
+    plt.close(fig)
 
 
 def evaluate_concept_heatmaps(
@@ -169,50 +276,46 @@ def evaluate_concept_heatmaps(
             loc = locs[cname]
             concept_rel = (loc * gts[cname]).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
             concept_rel_np = concept_rel.numpy()
-            loc_binary = binarize_heatmaps(loc, thresholding="otsu")
-            jaccards = np.array(
-                [
-                    jaccard_score(
-                        loc_binary[i].reshape(-1).numpy(),
-                        gts[cname][i].reshape(-1).numpy(),
-                    )
-                    for i in range(len(loc_binary))
-                ]
+            loc_binary = binarize_heatmaps(loc, thresholding="otsu").bool()
+            gt_binary = gts[cname].bool()
+            intersection = torch.logical_and(loc_binary, gt_binary).sum((1, 2)).float()
+            union = torch.logical_or(loc_binary, gt_binary).sum((1, 2)).float()
+            gt_area = gt_binary.sum((1, 2)).float()
+            ious = (intersection / (union + 1e-10)).numpy()
+            inter_over_true_mask = (intersection / (gt_area + 1e-10)).numpy()
+
+            _store_metric_stats(
+                results_quant, "concept_rel", cname, cav_name, concept_rel_np
             )
-            results_quant[f"iou_{cname}_{cav_name}"] = jaccards.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}"] = concept_rel_np.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}_sem"] = (
-                concept_rel_np.std() / np.sqrt(len(concept_rel_np))
+            _store_metric_stats(results_quant, "iou", cname, cav_name, ious)
+            _store_metric_stats(
+                results_quant,
+                "intersection_over_true_mask",
+                cname,
+                cav_name,
+                inter_over_true_mask,
             )
 
-    data_plot = pd.DataFrame(
-        data=[
-            ("Baseline", results_quant.get(f"concept_rel_timestamp_Baseline", 0.0)),
-            ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0)),
-        ],
-        columns=["CAV", "Concept Relevance"],
+    data_plot, data_plot_std = _build_metric_plot_frames(
+        results_quant, "concept_rel", "timestamp", "Concept Relevance"
     )
     vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
     savepath_quant = results_dir / f"concept_relevance"
     plot_concept_relevance(data_plot, vmax, savepath_quant)
-    data_plot_std = pd.DataFrame(
-        data=[
-            (
-                "Baseline",
-                results_quant.get(f"concept_rel_timestamp_Baseline", 0.0),
-                results_quant.get(f"concept_rel_timestamp_Baseline_sem", 0.0),
-            ),
-            (
-                "Orthogonal",
-                results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0),
-                results_quant.get(f"concept_rel_timestamp_Orthogonal_sem", 0.0),
-            ),
-        ],
-        columns=["CAV", "Concept Relevance", "SEM"],
-    )
     plot_concept_relevance_std(
         data_plot_std, vmax, results_dir / "concept_relevance_std"
     )
+    for metric_name, metric_label in [
+        ("iou", "IoU"),
+        ("intersection_over_true_mask", "Intersection over True Mask"),
+    ]:
+        data_plot, data_plot_std = _build_metric_plot_frames(
+            results_quant, metric_name, "timestamp", metric_label
+        )
+        plot_overlap_metric(data_plot, metric_label, results_dir / metric_name)
+        plot_overlap_metric_std(
+            data_plot_std, metric_label, results_dir / f"{metric_name}_std"
+        )
 
     with open(results_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
@@ -221,50 +324,18 @@ def evaluate_concept_heatmaps(
 def plot_concept_relevance(
     data_plot: pd.DataFrame, vmax: float, savename: Path
 ) -> None:
-    sns.set_style("whitegrid")
-    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
-    fig = plt.figure(figsize=(2.5, 3))
-    sns.barplot(x="CAV", y="Concept Relevance", hue="CAV", data=data_plot)
     ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
     if vmax == 0.5:
         ticks.append(0.5)
-    plt.ylim(0.25, vmax)
-    plt.yticks(ticks)
-    [
-        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
-        for ending in ["png", "pdf"]
-    ]
-    plt.close(fig)
+    _save_metric_plot(data_plot, "Concept Relevance", savename, 0.25, vmax, ticks)
 
 
 def plot_concept_relevance_std(
     data_plot: pd.DataFrame, vmax: float, savename: Path
 ) -> None:
-    sns.set_style("whitegrid")
-    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
-    fig, ax = plt.subplots(figsize=(2.5, 3))
-    cav_order = ["Baseline", "Orthogonal"]
-    ordered_df = data_plot.set_index("CAV").reindex(cav_order).reset_index()
-    sns.barplot(
-        x="CAV",
-        y="Concept Relevance",
-        hue="CAV",
-        data=ordered_df,
-        order=cav_order,
-        hue_order=cav_order,
-        errorbar=None,
-        ax=ax,
-    )
-    _add_concept_relevance_errorbars(
-        ax,
-        {row["CAV"]: float(row["SEM"]) for _, row in ordered_df.iterrows()},
-        cav_order,
-    )
-
-    ax.set_ylabel("Concept Relevance")
-    ymax = float((ordered_df["Concept Relevance"] + ordered_df["SEM"]).max())
+    ymax = float((data_plot["Concept Relevance"] + data_plot["SEM"]).max())
     vmax_plot = max(vmax, ymax + 0.01)
-    ymin = 0.25 if float(ordered_df["Concept Relevance"].min()) >= 0.25 else 0.0
+    ymin = 0.25 if float(data_plot["Concept Relevance"].min()) >= 0.25 else 0.0
     if ymin == 0.25:
         ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
         if vmax_plot >= 0.5:
@@ -272,15 +343,28 @@ def plot_concept_relevance_std(
     else:
         vmax_plot = max(0.05, float(np.ceil(vmax_plot / 0.05) * 0.05))
         ticks = np.arange(ymin, vmax_plot + 1e-9, 0.05).tolist()
-    ax.set_ylim(ymin, vmax_plot)
-    ax.set_yticks(ticks)
-    ax.xaxis.grid(False)
-    ax.yaxis.grid(True)
-    [
-        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
-        for ending in ["png", "pdf"]
-    ]
-    plt.close(fig)
+    _save_metric_plot_std(
+        data_plot, "Concept Relevance", savename, ymin, vmax_plot, ticks
+    )
+
+
+def plot_overlap_metric(
+    data_plot: pd.DataFrame, metric_label: str, savename: Path
+) -> None:
+    vmax = min(
+        1.0, max(0.1, float(np.ceil(float(data_plot[metric_label].max()) / 0.1) * 0.1))
+    )
+    ticks = np.arange(0.0, vmax + 1e-9, 0.1).tolist()
+    _save_metric_plot(data_plot, metric_label, savename, 0.0, vmax, ticks)
+
+
+def plot_overlap_metric_std(
+    data_plot: pd.DataFrame, metric_label: str, savename: Path
+) -> None:
+    ymax = float((data_plot[metric_label] + data_plot["SEM"]).max())
+    vmax = min(1.0, max(0.1, float(np.ceil(ymax / 0.1) * 0.1)))
+    ticks = np.arange(0.0, vmax + 1e-9, 0.1).tolist()
+    _save_metric_plot_std(data_plot, metric_label, savename, 0.0, vmax, ticks)
 
 
 def compute_concept_relevances(

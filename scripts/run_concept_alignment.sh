@@ -10,17 +10,17 @@ CKPT_PATH="checkpoints/checkpoint_vgg16_celeba_attacked.pth"
 # CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav, svm_cav, log_cav, G_SAE, random_cav
 CAV_MODE="max"                  # Options: full, max, avg
 OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
-EXIT_CRITERION="orthogonality"  # Options: None, orthogonality, auc
+EXIT_CRITERION="auc"  # Options: None, orthogonality, auc
 NUM_EPOCHS="50"
 LR="0.0001"                     # Learning rate for CAV optimization
 SPLIT="test"                    # Options: train, val, test
 # MAX_SAMPLES="64"              # Optional debug cap
 
 CAV_MODELS=(
-  # "pattern_cav"
-  # "multi_cav"
-  # "svm_cav"
-  # "log_cav"
+  "pattern_cav"
+  "multi_cav"
+  "svm_cav"
+  "log_cav"
   "random_cav"
   "G_SAE"
 )

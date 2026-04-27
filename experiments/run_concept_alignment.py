@@ -21,7 +21,7 @@ def run(cfg: DictConfig) -> None:
     dir_model, base_model = get_dir_models(cfg)
 
     log.info("2. Evaluating concept alignment.")
-    evaluate_concept_alignment(cfg, dir_model, base_model)
+    # evaluate_concept_alignment(cfg, dir_model, base_model)
 
     log.info("3. Evaluating concept heatmaps.")
     evaluate_concept_heatmaps(cfg, dir_model, base_model)
