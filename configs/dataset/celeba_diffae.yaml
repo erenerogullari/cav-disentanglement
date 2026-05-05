@@ -1,5 +1,5 @@
 _target_: datasets.CelebAHQ
-path_data: /home/erogullari/datasets/celeba_diffae/images
-path_labels: /home/erogullari/datasets/celeba_diffae/labels/original.csv
+path_data: /media/erogullari/datasets/celeba_diffae/images
+path_labels: /media/erogullari/datasets/celeba_diffae/labels/original.csv
 n_samples: 202599
 name: celeba

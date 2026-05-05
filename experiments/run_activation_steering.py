@@ -4,19 +4,26 @@ import torch
 import logging
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from experiments.activation_steering import run_encode, run_move_encs, run_decode, get_dir_model
+from experiments.activation_steering import (
+    run_encode,
+    run_move_encs,
+    run_decode,
+    get_dir_model,
+)
 from experiments.activation_steering.utils import clean_up
 
 log = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="activation_steering")
+@hydra.main(
+    version_base=None, config_path="../configs", config_name="activation_steering"
+)
 def run(cfg: DictConfig) -> None:
     """Main function to run the disentangle_cavs experiment.
     Args:
         cfg (DictConfig): Configuration object containing all parameters.
     Returns:
-        None  
+        None
     """
     device = cfg.experiment.device
     log.info(f"Using device: {device}")
@@ -35,8 +42,9 @@ def run(cfg: DictConfig) -> None:
 
     log.info("5. Cleaning up temporary files")
     clean_up(cfg)
-    
+
     log.info("Experiment succesfully completed.")
+
 
 if __name__ == "__main__":
     run()
