@@ -4,7 +4,7 @@ import logging
 from omegaconf import DictConfig, OmegaConf
 from experiments.utils.train_cavs import train_cavs
 from pathlib import Path
-from hydra.utils import get_original_cwd, instantiate
+from hydra.utils import instantiate
 
 log = logging.getLogger(__name__)
 
@@ -21,25 +21,31 @@ def load_dir_model(target: str, n_concepts: int, n_features: int, state_path: Pa
     return dir_model
 
 def prepare_config(cfg: DictConfig, alpha: float) -> DictConfig:
+    train_cfg = {
+        "learning_rate": cfg.dir_model.learning_rate,
+        "num_epochs": cfg.dir_model.n_epochs,
+        "batch_size": cfg.experiment.batch_size,
+        "num_workers": cfg.experiment.num_workers,
+        "device": cfg.experiment.device,
+        "random_seed": cfg.dir_model.random_seed,
+        "val_ratio": cfg.dir_model.val_ratio,
+        "test_ratio": cfg.dir_model.test_ratio,
+    }
+    if "train_subset" in cfg.dir_model:
+        train_cfg["subset"] = OmegaConf.to_container(
+            cfg.dir_model.train_subset, resolve=True
+        )
+
     cav_cfg = OmegaConf.create(
         {
             "experiment": {"name": cfg.experiment.name},
             "dataset": cfg.encode.dataset,
             "model": cfg.model,
-            "train": {
-                "learning_rate": cfg.dir_model.learning_rate,
-                "num_epochs": cfg.dir_model.n_epochs,
-                "batch_size": cfg.experiment.batch_size,
-                "num_workers": cfg.experiment.num_workers,
-                "device": cfg.experiment.device,
-                "random_seed": cfg.dir_model.random_seed,
-                "val_ratio": cfg.dir_model.val_ratio,
-                "test_ratio": cfg.dir_model.test_ratio,
-            },
+            "train": train_cfg,
             "cav": {
                 "_target_": cfg.dir_model["_target_"],
                 "name": cfg.dir_model.name,
-                "layer": "",
+                "layer": cfg.dir_model.get("layer", "bottleneck"),
                 "alpha": alpha,
                 "beta": None,
                 "n_targets": 0,
@@ -53,9 +59,11 @@ def prepare_config(cfg: DictConfig, alpha: float) -> DictConfig:
     return DictConfig(cav_cfg)
 
 def get_dir_model(cfg: DictConfig, encodings: torch.Tensor, labels: torch.Tensor) -> nn.Module:
+    cav_cfg = prepare_config(cfg, cfg.dir_model.alpha)
     cache_dir = Path(cfg.experiment.out) / "dir_models" / str(cfg.dir_model.name)
     alpha = cfg.dir_model.alpha
-    save_dir = cache_dir / f"alpha{alpha}"
+    cache_name = f"alpha{alpha}"
+    save_dir = cache_dir / cache_name
     state_path = save_dir / "state_dict.pth"
 
     if state_path.exists():
@@ -64,7 +72,6 @@ def get_dir_model(cfg: DictConfig, encodings: torch.Tensor, labels: torch.Tensor
         return dir_model
 
     log.info("No cached direction model found for alpha=%s. Training new model.", alpha)
-    cav_cfg = prepare_config(cfg, alpha)
     labels_clamped = labels.clamp(0)
     dir_model = train_cavs(cav_cfg, encodings, labels_clamped, save_dir)    # type: ignore
 

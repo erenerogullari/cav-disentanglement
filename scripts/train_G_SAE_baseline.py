@@ -9,8 +9,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
-MODEL = "vgg16"
-LAYER = "features.28"
+MODEL = "diffae"
+LAYER = "bottleneck"
 DATASET = "celeba"
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -87,19 +87,28 @@ def parse_args() -> argparse.Namespace:
         "--latent-cache-path",
         type=Path,
         default=None,
-        help="Path to a .pth file containing 'encs' and 'labels'.",
+        help=(
+            "Path to a .pth file containing 'encs' and 'labels', or a directory "
+            "containing encodings_*.pt chunks."
+        ),
     )
     parser.add_argument(
         "--checkpoint-dir",
         type=Path,
-        default=ROOT / "notebooks" / "checkpoints" / "g_sae_baseline",
-        help="Directory for Lightning checkpoints.",
+        default=None,
+        help=(
+            "Directory for intermediate Lightning .ckpt files. Defaults to "
+            "checkpoints/{dataset}/{model}/{layer}/lightning."
+        ),
     )
     parser.add_argument(
         "--export-dir",
         type=Path,
-        default=ROOT / "notebooks" / "checkpoints" / "g_sae_baseline" / "exports",
-        help="Directory for exported G_SAE .pth payloads.",
+        default=None,
+        help=(
+            "Directory for exported G_SAE .pth payloads. Defaults to "
+            "checkpoints/{dataset}/{model}/{layer}."
+        ),
     )
     parser.add_argument(
         "--suggested-baseline-path",
@@ -183,6 +192,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-batch-size", type=int, default=32)
     parser.add_argument("--classifier-ckpt-path", type=Path, default=None)
     parser.add_argument("--celeba-data-root", type=Path, default=None)
+    parser.add_argument(
+        "--dry-run-data-load",
+        action="store_true",
+        help="Load latent tensors and print their shapes without starting training.",
+    )
     return parser.parse_args()
 
 
@@ -225,6 +239,10 @@ import_runtime_dependencies()
 
 
 def default_latent_cache_path(config: dict[str, Any]) -> Path:
+    chunked_cache_dir = ROOT / "variables" / config["dataset"] / config["model"]
+    if any(chunked_cache_dir.glob("encodings_*.pt")):
+        return chunked_cache_dir
+
     return (
         ROOT
         / "variables"
@@ -232,6 +250,20 @@ def default_latent_cache_path(config: dict[str, Any]) -> Path:
         / config["model"]
         / f"{config['layer']}.pth"
     )
+
+
+def default_g_sae_export_dir(config: dict[str, Any]) -> Path:
+    return (
+        ROOT
+        / "checkpoints"
+        / config["dataset"]
+        / config["model"]
+        / config["layer"]
+    )
+
+
+def default_lightning_checkpoint_dir(config: dict[str, Any]) -> Path:
+    return default_g_sae_export_dir(config) / "lightning"
 
 
 def default_suggested_baseline_path(config: dict[str, Any]) -> Path:
@@ -377,7 +409,7 @@ def build_export_payload(
     model: G_SAE,
     config: dict[str, Any],
     run_config: dict[str, Any],
-    dataset_metadata: dict[str, int],
+    dataset_metadata: dict[str, Any],
     history: list[dict[str, float]],
     best_metrics: dict[str, Any],
 ) -> dict[str, Any]:
@@ -410,6 +442,8 @@ def build_export_payload(
         "cond_weight": float(run_config["cond_weight"]),
         "baseline_definition": "guided_sae_alpha_0",
         "latent_cache_path": str(run_config["latent_cache_path"]),
+        "latent_cache_format": str(dataset_metadata["latent_cache_format"]),
+        "label_names": dataset_metadata.get("label_names"),
         "export_path": str(run_config["export_path"]),
         "suggested_baseline_path": str(run_config["suggested_baseline_path"]),
         "best_checkpoint_path": str(run_config.get("best_checkpoint_path") or ""),
@@ -526,22 +560,99 @@ class GSAELightningModule(pl.LightningModule):
         )
 
 
+def load_single_latent_file(latent_cache_path: Path) -> tuple[
+    torch.Tensor, torch.Tensor, dict[str, Any]
+]:
+    if not latent_cache_path.is_file():
+        raise FileNotFoundError(f"Latent cache file not found: {latent_cache_path}")
+
+    latent_payload = torch.load(
+        latent_cache_path, map_location="cpu", weights_only=True
+    )
+    if "encs" not in latent_payload or "labels" not in latent_payload:
+        raise KeyError(
+            f"Expected '{latent_cache_path}' to contain top-level 'encs' and 'labels'."
+        )
+
+    metadata = {
+        "latent_cache_format": "single_pth",
+        "latent_cache_path": latent_cache_path.as_posix(),
+        "label_names": None,
+    }
+    return latent_payload["encs"].float(), latent_payload["labels"].float(), metadata
+
+
+def load_chunked_encodings(latent_cache_path: Path) -> tuple[
+    torch.Tensor, torch.Tensor, dict[str, Any]
+]:
+    if not latent_cache_path.is_dir():
+        raise FileNotFoundError(f"Chunked latent cache directory not found: {latent_cache_path}")
+
+    cache_files = sorted(latent_cache_path.glob("encodings_*.pt"))
+    if not cache_files:
+        raise FileNotFoundError(f"No encodings_*.pt files found under {latent_cache_path}.")
+
+    entries: list[tuple[int, torch.Tensor, torch.Tensor]] = []
+    label_names: list[str] | None = None
+
+    for cache_file in cache_files:
+        chunk = torch.load(cache_file, map_location="cpu", weights_only=True)
+        for sample_idx, payload in chunk.items():
+            sample_labels = payload["labels"]
+            if label_names is None:
+                label_names = list(sample_labels.keys())
+            elif set(sample_labels.keys()) != set(label_names):
+                raise ValueError(
+                    f"Label keys in {cache_file} differ from earlier chunks."
+                )
+
+            ordered_labels = torch.tensor(
+                [float(sample_labels[name]) for name in label_names],
+                dtype=torch.float32,
+            )
+            entries.append(
+                (
+                    int(sample_idx),
+                    payload["enc"].detach().cpu().float(),
+                    ordered_labels,
+                )
+            )
+
+    if not entries:
+        raise FileNotFoundError(f"No encoding entries found under {latent_cache_path}.")
+
+    entries.sort(key=lambda item: item[0])
+    metadata = {
+        "latent_cache_format": "chunked_encodings",
+        "latent_cache_path": latent_cache_path.as_posix(),
+        "label_names": label_names or [],
+    }
+    encs = torch.stack([entry[1] for entry in entries], dim=0)
+    labels = torch.stack([entry[2] for entry in entries], dim=0)
+    return encs, labels, metadata
+
+
+def load_latent_tensors(latent_cache_path: Path) -> tuple[
+    torch.Tensor, torch.Tensor, dict[str, Any]
+]:
+    if latent_cache_path.is_dir():
+        return load_chunked_encodings(latent_cache_path)
+    return load_single_latent_file(latent_cache_path)
+
+
 def load_latent_dataset(config: dict[str, Any], latent_cache_path: Path) -> tuple[
     TensorDataset,
     torch.utils.data.Subset,
     torch.utils.data.Subset,
-    dict[str, int],
+    dict[str, Any],
     int,
     int,
 ]:
     if not latent_cache_path.exists():
         raise FileNotFoundError(f"Latent cache not found: {latent_cache_path}")
 
-    latent_payload = torch.load(
-        latent_cache_path, map_location="cpu", weights_only=True
-    )
-    encs = latent_payload["encs"].float()
-    labels = latent_payload["labels"].float().clamp(min=0)
+    encs, labels, latent_metadata = load_latent_tensors(latent_cache_path)
+    labels = labels.clamp(min=0)
 
     if config["max_samples"] is not None:
         max_samples = int(config["max_samples"])
@@ -569,6 +680,7 @@ def load_latent_dataset(config: dict[str, Any], latent_cache_path: Path) -> tupl
         "n_samples": int(n_samples),
         "train_size": int(train_size),
         "val_size": int(val_size),
+        **latent_metadata,
     }
     return dataset, train_dataset, val_dataset, dataset_metadata, n_features, n_concepts
 
@@ -615,6 +727,12 @@ def train_sweep(
         print(f"  latent_factor={run['latent_factor']}, topk_ratio={run['topk_ratio']}")
     print(f"encs shape      : ({dataset_metadata['n_samples']}, {n_features})")
     print(f"labels shape    : ({dataset_metadata['n_samples']}, {n_concepts})")
+    print(f"Latent format   : {dataset_metadata['latent_cache_format']}")
+    label_names = dataset_metadata.get("label_names")
+    if label_names:
+        preview = ", ".join(label_names[:5])
+        suffix = "..." if len(label_names) > 5 else ""
+        print(f"Label names     : {preview}{suffix}")
     print(f"Train size      : {dataset_metadata['train_size']}")
     print(f"Val size        : {dataset_metadata['val_size']}")
     print(
@@ -1256,15 +1374,35 @@ def main() -> None:
     args = parse_args()
     config = build_config(args)
     latent_cache_path = args.latent_cache_path or default_latent_cache_path(config)
+    export_dir = args.export_dir or default_g_sae_export_dir(config)
+    checkpoint_dir = args.checkpoint_dir or default_lightning_checkpoint_dir(config)
     suggested_baseline_path = (
         args.suggested_baseline_path or default_suggested_baseline_path(config)
     )
 
+    if args.dry_run_data_load:
+        _, _, _, dataset_metadata, n_features, n_concepts = load_latent_dataset(
+            config=config,
+            latent_cache_path=latent_cache_path.expanduser().resolve(),
+        )
+        print(f"Latent cache    : {dataset_metadata['latent_cache_path']}")
+        print(f"Latent format   : {dataset_metadata['latent_cache_format']}")
+        print(f"encs shape      : ({dataset_metadata['n_samples']}, {n_features})")
+        print(f"labels shape    : ({dataset_metadata['n_samples']}, {n_concepts})")
+        label_names = dataset_metadata.get("label_names")
+        if label_names:
+            preview = ", ".join(label_names[:5])
+            suffix = "..." if len(label_names) > 5 else ""
+            print(f"Label names     : {preview}{suffix}")
+        print(f"Train size      : {dataset_metadata['train_size']}")
+        print(f"Val size        : {dataset_metadata['val_size']}")
+        return
+
     training_outputs = train_sweep(
         config=config,
         latent_cache_path=latent_cache_path.expanduser().resolve(),
-        export_dir=args.export_dir.expanduser().resolve(),
-        checkpoint_dir=args.checkpoint_dir.expanduser().resolve(),
+        export_dir=export_dir.expanduser().resolve(),
+        checkpoint_dir=checkpoint_dir.expanduser().resolve(),
         suggested_baseline_path=suggested_baseline_path.expanduser().resolve(),
     )
 

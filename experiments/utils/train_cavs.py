@@ -131,6 +131,74 @@ def train_test_split(cfg, dataset, x_latent, labels):
     return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 
+def get_train_subset_ratio(cfg: DictConfig) -> float | None:
+    subset_cfg = cfg.train.get("subset", None)
+    if subset_cfg is None:
+        return None
+
+    ratio = subset_cfg.get("ratio", None)
+    if ratio is None:
+        return None
+
+    ratio = float(ratio)
+    if ratio <= 0 or ratio > 1:
+        raise ValueError(
+            f"cfg.train.subset.ratio must be in (0, 1], got {ratio}."
+        )
+    return ratio
+
+
+def get_train_subset_seed(cfg: DictConfig) -> int:
+    subset_cfg = cfg.train.get("subset", None)
+    if subset_cfg is None:
+        return int(cfg.train.random_seed)
+    return int(subset_cfg.get("seed", cfg.train.random_seed))
+
+
+def _format_train_subset_ratio(ratio: float) -> str:
+    return f"{ratio:.12g}"
+
+
+def apply_train_subset(
+    cfg: DictConfig,
+    train_latents: torch.Tensor,
+    train_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    ratio = get_train_subset_ratio(cfg)
+    if ratio is None:
+        return train_latents, train_labels
+
+    n_train = train_latents.shape[0]
+    if n_train == 0:
+        raise ValueError("Cannot apply cfg.train.subset.ratio to an empty train split.")
+
+    n_subset = int(np.ceil(n_train * ratio))
+    if n_subset >= n_train:
+        log.info(
+            "CAV train subset ratio=%s keeps all %s training samples.",
+            _format_train_subset_ratio(ratio),
+            n_train,
+        )
+        return train_latents, train_labels
+
+    seed = get_train_subset_seed(cfg)
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
+    subset_idxs = torch.randperm(n_train, generator=generator)[:n_subset]
+    subset_idxs = subset_idxs.sort().values
+
+    log.info(
+        "Subsampling CAV training rows: %s/%s samples (ratio=%s, seed=%s).",
+        n_subset,
+        n_train,
+        _format_train_subset_ratio(ratio),
+        seed,
+    )
+    latent_idxs = subset_idxs.to(train_latents.device)
+    label_idxs = subset_idxs.to(train_labels.device)
+    return train_latents[latent_idxs], train_labels[label_idxs]
+
+
 def train_epoch(dataloader, cav_model, weights, optimizer, device):
 
     epoch_cav_loss = 0.0
@@ -247,6 +315,7 @@ def train_cavs(
     train_latents, train_labels, val_latents, val_labels, _, _ = train_test_split(
         cfg, dataset, x_latent, labels
     )
+    train_latents, train_labels = apply_train_subset(cfg, train_latents, train_labels)
     train_dataset = TensorDataset(train_latents, train_labels)
     train_loader = DataLoader(
         train_dataset,
