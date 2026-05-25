@@ -19,6 +19,9 @@ checkpoints/
 
 # Configurations
 configs/*
+configs/dataset/*
+configs/cav_model/*
+configs/model/*
 !configs/concept_alignment.yaml
 !configs/cav_model/random_cav.yaml
 
