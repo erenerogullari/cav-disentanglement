@@ -22,7 +22,7 @@ CAV_MODELS=(
   "svm_cav"
   "log_cav"
   "random_cav"
-  "G_SAE"
+  # "G_SAE"
 )
 ALPHAS=("0.1" "1" "10" "100" "1000")
 

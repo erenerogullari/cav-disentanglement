@@ -10,4 +10,5 @@ artifact_type: ch_time
 time_format: datetime
 p_artifact: 0.4
 entanglement_factor: 5
+brightness_factor: 1.4
 name: celeba_attacked

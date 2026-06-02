@@ -33,11 +33,11 @@ cav:
 
 alignment:
   split: test
-  artifact_concepts: [box, timestamp]
+  artifact_concepts: [timestamp, box, brightness]
   max_samples: null
   batch_size: ${train.batch_size}
   save_raw_scores: true
 
 heatmaps:
-  concepts: [box, timestamp]
-  artifacts: [box, timestamp]
+  concepts: [timestamp, box, brightness]
+  artifacts: [timestamp, box, brightness]

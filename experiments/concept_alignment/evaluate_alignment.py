@@ -99,6 +99,13 @@ def _resolve_artifact_concepts(cfg: DictConfig, dataset: Any) -> list[str]:
 
 
 def _build_artifact_spec_map(dataset: Any) -> dict[str, tuple[str, dict[str, Any]]]:
+    if hasattr(dataset, "artifact_specs"):
+        artifact_specs = dataset.artifact_specs.items()
+        return {
+            concept: (artifact_type, dict(artifact_kwargs))
+            for concept, (artifact_type, artifact_kwargs) in artifact_specs
+        }
+
     if not hasattr(dataset, "sample_ids_by_artifact"):
         return {}
 

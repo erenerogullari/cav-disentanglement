@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as T
-from PIL import ImageDraw, Image
+from PIL import ImageDraw, Image, ImageEnhance
 
 
 def get_artifact_kwargs(config):
@@ -41,6 +41,10 @@ def get_artifact_kwargs(config):
         artifact_kwargs = {
             "alpha": config.get("alpha", .3)
         }
+    elif artifact_type == "brightness":
+        artifact_kwargs = {
+            "factor": config.get("brightness_factor", config.get("factor", 1.4))
+        }
     elif artifact_type == "defective_lead":
         artifact_kwargs = {
             "lead_ids": config.get("lead_ids", [1]),
@@ -68,6 +72,8 @@ def insert_artifact(img, artifact_type, **kwargs):
         return insert_artifact_channel(img, **kwargs)
     elif artifact_type == "white_color":
         return insert_artifact_white_color(img, **kwargs)
+    elif artifact_type == "brightness":
+        return insert_artifact_brightness(img, **kwargs)
     elif artifact_type == "red_color":
         return insert_artifact_red_color(img, **kwargs)
     elif artifact_type == "lsb":
@@ -211,6 +217,13 @@ def insert_artifact_white_color(img, **kwargs):
     mask = torch.ones((img.shape[0], img.shape[1]))
     img = Image.fromarray(img)
 
+    return img, mask
+
+
+def insert_artifact_brightness(img, **kwargs):
+    factor = kwargs.get("factor", kwargs.get("brightness_factor", 1.4))
+    img = ImageEnhance.Brightness(img).enhance(factor)
+    mask = torch.ones((img.height, img.width))
     return img, mask
 
 

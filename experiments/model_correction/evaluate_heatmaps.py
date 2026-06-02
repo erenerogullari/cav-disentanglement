@@ -197,12 +197,17 @@ def evaluate_concept_heatmaps(
         "Orthogonal": cavs_orthogonal.cpu(),
     }
     concept_names = dataset.get_concept_names()
-    concepts_to_plot = cfg.heatmaps.concepts
-    for cname in concepts_to_plot:
+    concepts_to_plot = []
+    for cname in list(cfg.heatmaps.concepts):
         if cname not in concept_names:
             log.warning(
                 f"Concept {cname} not found in dataset concepts. Available concepts: {concept_names}"
             )
+        else:
+            concepts_to_plot.append(cname)
+    if len(concepts_to_plot) == 0:
+        log.warning("No requested heatmap concepts are available. Skipping.")
+        return
 
     sample_ids = _select_heatmap_samples(dataset, cfg)
     if len(sample_ids) == 0:
@@ -263,14 +268,17 @@ def evaluate_concept_heatmaps(
         dataset,
         imgs[: min(len(imgs), num_imgs)],
         cav_localizations,
-        gts["timestamp"],
-        gts["box"],
+        gts,
+        concepts_to_plot,
         savepath,
     )
 
     results_quant = {}
+    metric_concepts = [
+        cname for cname in concepts_to_plot if cname in gts and gts[cname] is not None
+    ]
     for cav_name, locs in cav_localizations.items():
-        for cname in ["timestamp", "box"]:
+        for cname in metric_concepts:
             if cname not in locs:
                 continue
             loc = locs[cname]
@@ -296,26 +304,32 @@ def evaluate_concept_heatmaps(
                 inter_over_true_mask,
             )
 
-    data_plot, data_plot_std = _build_metric_plot_frames(
-        results_quant, "concept_rel", "timestamp", "Concept Relevance"
-    )
-    vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
-    savepath_quant = results_dir / f"concept_relevance"
-    plot_concept_relevance(data_plot, vmax, savepath_quant)
-    plot_concept_relevance_std(
-        data_plot_std, vmax, results_dir / "concept_relevance_std"
-    )
-    for metric_name, metric_label in [
-        ("iou", "IoU"),
-        ("intersection_over_true_mask", "Intersection over True Mask"),
-    ]:
+    for cname in metric_concepts:
+        metric_prefix = "" if cname == "timestamp" else f"{cname}_"
         data_plot, data_plot_std = _build_metric_plot_frames(
-            results_quant, metric_name, "timestamp", metric_label
+            results_quant, "concept_rel", cname, "Concept Relevance"
         )
-        plot_overlap_metric(data_plot, metric_label, results_dir / metric_name)
-        plot_overlap_metric_std(
-            data_plot_std, metric_label, results_dir / f"{metric_name}_std"
+        vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
+        savepath_quant = results_dir / f"{metric_prefix}concept_relevance"
+        plot_concept_relevance(data_plot, vmax, savepath_quant)
+        plot_concept_relevance_std(
+            data_plot_std, vmax, results_dir / f"{metric_prefix}concept_relevance_std"
         )
+        for metric_name, metric_label in [
+            ("iou", "IoU"),
+            ("intersection_over_true_mask", "Intersection over True Mask"),
+        ]:
+            data_plot, data_plot_std = _build_metric_plot_frames(
+                results_quant, metric_name, cname, metric_label
+            )
+            plot_overlap_metric(
+                data_plot, metric_label, results_dir / f"{metric_prefix}{metric_name}"
+            )
+            plot_overlap_metric_std(
+                data_plot_std,
+                metric_label,
+                results_dir / f"{metric_prefix}{metric_name}_std",
+            )
 
     with open(results_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
@@ -377,12 +391,22 @@ def compute_concept_relevances(
     batch_size: int = 8,
 ):
     localizations = {c: None for c in cavs.keys()}
-    gts = {"timestamp": None, "box": None}
+    artifact_names = list(cfg.heatmaps.artifacts)
+    gts = {c: None for c in artifact_names}
     layer_name = cfg.cav.layer
     hm_config = {"layer_name": layer_name}
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
     imgs = None
-    for x, _, loc_timestamp, loc_box in tqdm.tqdm(dl):
+    for batch in tqdm.tqdm(dl):
+        x = batch[0]
+        artifact_masks = batch[2]
+        if not isinstance(artifact_masks, dict):
+            if len(batch) == 4:
+                artifact_masks = {"timestamp": batch[2], "box": batch[3]}
+            else:
+                raise ValueError(
+                    "Expected heatmap dataset to return artifact masks as a dict."
+                )
         for cname, cav in cavs.items():
             attr, loc_cav = get_localizations(
                 x.clone(), cav, attribution, composite, hm_config, device
@@ -393,76 +417,49 @@ def compute_concept_relevances(
                 if localizations[cname] is None
                 else torch.cat([localizations[cname], loc_cav])
             )
-        gts["timestamp"] = (
-            loc_timestamp
-            if gts["timestamp"] is None
-            else torch.cat([gts["timestamp"], loc_timestamp])
-        )
-        gts["box"] = loc_box if gts["box"] is None else torch.cat([gts["box"], loc_box])
+        for cname in artifact_names:
+            if cname not in artifact_masks:
+                continue
+            mask = artifact_masks[cname]
+            gts[cname] = mask if gts[cname] is None else torch.cat([gts[cname], mask])
         imgs = x.detach().cpu() if imgs is None else torch.cat([imgs, x.detach().cpu()])
     return imgs, localizations, gts
 
 
 def create_plot(
-    ds, imgs, cav_localizations, gt_timestamp, gt_box, savepath: Path
+    ds, imgs, cav_localizations, gts, concepts_to_plot, savepath: Path
 ) -> None:
     num_cavs = len(cav_localizations)
     nrows = len(imgs)
-    ncols = 3 + 3 * num_cavs
+    plotted_concepts = [
+        cname
+        for cname in concepts_to_plot
+        if any(cname in localizations for localizations in cav_localizations.values())
+    ]
+    ncols = 1 + sum(
+        num_cavs + (1 if cname in gts and gts[cname] is not None else 0)
+        for cname in plotted_concepts
+    )
     size = 1.7
     level = 2.0
-    fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * size, nrows * size))
+    fig, axs = plt.subplots(
+        nrows, ncols, figsize=(ncols * size, nrows * size), squeeze=False
+    )
 
     for i in range(nrows):
         ax = axs[i][0]
         ax.imshow(ds.reverse_normalization(imgs[i]).permute((1, 2, 0)).int().numpy())
         axs[0][0].set_title("Input")
 
-        for cav_idx, (cav_name, localizations) in enumerate(cav_localizations.items()):
-            cname = "timestamp"
+        c = 1
+        for cname in plotted_concepts:
             all_maxs = [
-                all_concept_hms[cname][i].max()
+                all_concept_hms[cname][i].max().detach().float()
                 for _, all_concept_hms in cav_localizations.items()
+                if cname in all_concept_hms
             ]
-            normalization_constant = torch.max(torch.tensor(all_maxs))
-            c = 1 + cav_idx
-            ax = axs[i][c]
-            img_hm = imgify(
-                localizations[cname][i] / normalization_constant,
-                cmap="bwr",
-                vmin=-1,
-                vmax=1,
-                level=level,
-            )
-            ax.imshow(img_hm)
-            axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-            cname = "box"
-            all_maxs = [
-                all_concept_hms[cname][i].max()
-                for _, all_concept_hms in cav_localizations.items()
-            ]
-            normalization_constant = torch.max(torch.tensor(all_maxs))
-            c = 1 + num_cavs + 1 + cav_idx
-            ax = axs[i][c]
-            img_hm = imgify(
-                localizations[cname][i] / normalization_constant,
-                cmap="bwr",
-                vmin=-1,
-                vmax=1,
-                level=level,
-            )
-            ax.imshow(img_hm)
-            axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-            cname = "Blond_Hair"
-            if cname in localizations:
-                all_maxs = [
-                    all_concept_hms[cname][i].max()
-                    for _, all_concept_hms in cav_localizations.items()
-                ]
-                normalization_constant = torch.max(torch.tensor(all_maxs))
-                c = 1 + 2 * (num_cavs + 1) + cav_idx
+            normalization_constant = torch.stack(all_maxs).max().clamp_min(1e-12)
+            for cav_name, localizations in cav_localizations.items():
                 ax = axs[i][c]
                 img_hm = imgify(
                     localizations[cname][i] / normalization_constant,
@@ -473,16 +470,12 @@ def create_plot(
                 )
                 ax.imshow(img_hm)
                 axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-        c = 1 + num_cavs
-        ax = axs[i][c]
-        ax.imshow(gt_timestamp[i].numpy())
-        axs[0][c].set_title("Ground Truth")
-
-        c = 1 + 2 * num_cavs + 1
-        ax = axs[i][c]
-        ax.imshow(gt_box[i].numpy())
-        axs[0][c].set_title("Ground Truth")
+                c += 1
+            if cname in gts and gts[cname] is not None:
+                ax = axs[i][c]
+                ax.imshow(gts[cname][i].numpy())
+                axs[0][c].set_title(f"{cname}\nGround Truth")
+                c += 1
 
     for _axs in axs:
         for ax in _axs:
@@ -494,3 +487,4 @@ def create_plot(
         fig.savefig(f"{savepath}.{ending}", bbox_inches="tight")
         for ending in ["png", "pdf"]
     ]
+    plt.close(fig)
