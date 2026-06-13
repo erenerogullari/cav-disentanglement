@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+import torch.nn.functional as F
 import tqdm
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -28,6 +29,8 @@ from datasets import get_dataset
 
 log = logging.getLogger(__name__)
 CAV_PLOT_ORDER = ["Baseline", "Orthogonal"]
+BOX_MASK_DILATION_PIXELS = 3
+BOX_DILATED_CONCEPT_NAME = f"box_dilated_{BOX_MASK_DILATION_PIXELS}px"
 
 
 def _add_metric_errorbars(
@@ -92,6 +95,23 @@ def _store_metric_stats(
 ) -> None:
     results_quant[f"{metric_name}_{concept_name}_{cav_name}"] = float(values.mean())
     results_quant[f"{metric_name}_{concept_name}_{cav_name}_sem"] = _metric_sem(values)
+
+
+def _dilate_binary_masks(masks: torch.Tensor, padding: int) -> torch.Tensor:
+    if padding <= 0:
+        return masks
+    if masks.ndim != 3:
+        raise ValueError(
+            f"Expected masks with shape (N, H, W), got {tuple(masks.shape)}"
+        )
+    kernel_size = 2 * padding + 1
+    dilated = F.max_pool2d(
+        masks.float().unsqueeze(1),
+        kernel_size=kernel_size,
+        stride=1,
+        padding=padding,
+    ).squeeze(1)
+    return dilated.to(dtype=masks.dtype)
 
 
 def _build_metric_plot_frames(
@@ -274,18 +294,25 @@ def evaluate_concept_heatmaps(
     )
 
     results_quant = {}
-    metric_concepts = [
-        cname for cname in concepts_to_plot if cname in gts and gts[cname] is not None
-    ]
+    metric_masks = {
+        cname: gts[cname]
+        for cname in concepts_to_plot
+        if cname in gts and gts[cname] is not None
+    }
+    if "box" in metric_masks:
+        metric_masks[BOX_DILATED_CONCEPT_NAME] = _dilate_binary_masks(
+            metric_masks["box"], BOX_MASK_DILATION_PIXELS
+        )
     for cav_name, locs in cav_localizations.items():
-        for cname in metric_concepts:
-            if cname not in locs:
+        for cname, gt_mask in metric_masks.items():
+            loc_name = "box" if cname == BOX_DILATED_CONCEPT_NAME else cname
+            if loc_name not in locs:
                 continue
-            loc = locs[cname]
-            concept_rel = (loc * gts[cname]).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
+            loc = locs[loc_name]
+            concept_rel = (loc * gt_mask).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
             concept_rel_np = concept_rel.numpy()
             loc_binary = binarize_heatmaps(loc, thresholding="otsu").bool()
-            gt_binary = gts[cname].bool()
+            gt_binary = gt_mask.bool()
             intersection = torch.logical_and(loc_binary, gt_binary).sum((1, 2)).float()
             union = torch.logical_or(loc_binary, gt_binary).sum((1, 2)).float()
             gt_area = gt_binary.sum((1, 2)).float()
@@ -304,7 +331,7 @@ def evaluate_concept_heatmaps(
                 inter_over_true_mask,
             )
 
-    for cname in metric_concepts:
+    for cname in metric_masks:
         metric_prefix = "" if cname == "timestamp" else f"{cname}_"
         data_plot, data_plot_std = _build_metric_plot_frames(
             results_quant, "concept_rel", cname, "Concept Relevance"
