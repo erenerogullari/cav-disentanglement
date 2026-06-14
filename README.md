@@ -69,7 +69,7 @@ It trains CAVs and (optionally) runs localization/colocalization visualizations.
      layer: features.28
      alpha: 0.1
      beta: null
-     n_targets: 0
+     target_concepts: []
      optimal_init: false
      exit_criterion: orthogonality
    ```

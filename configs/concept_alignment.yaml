@@ -27,7 +27,7 @@ cav:
   layer: features.29
   alpha: ???
   beta: null
-  n_targets: 0
+  target_concepts: []
   optimal_init: true
   exit_criterion: orthogonality
 

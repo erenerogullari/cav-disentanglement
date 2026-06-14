@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import pickle
 from omegaconf import DictConfig, OmegaConf
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Sequence
 from crp.attribution import CondAttribution
 from zennit.composites import EpsilonPlusFlat
 from pathlib import Path
@@ -13,55 +13,110 @@ from utils.visualizations import plot_training_loss, plot_metrics_over_time, plo
 from utils.metrics import get_accuracy, get_avg_precision, get_uniqueness, compute_auc_performance, get_auconf, get_confusion_matrices
 from utils.sim_matrix import reorder_similarity_matrix
 
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+def _sanitize_path_component(value: Any) -> str:
+    text = str(value)
+    sanitized = "".join(char if char.isalnum() or char in "._-" else "-" for char in text)
+    sanitized = "-".join(part for part in sanitized.split("-") if part)
+    return sanitized or "none"
+
+
+def get_target_concepts(cav_cfg: DictConfig | Dict[str, Any]) -> list[str]:
+    """Return target concept names from a CAV-like config as plain strings."""
+    raw_targets = cav_cfg.get("target_concepts", [])
+    return [str(concept) for concept in _as_list(raw_targets)]
+
+
+def format_orthogonality_config_name(
+    alpha: Any,
+    beta: Any = None,
+    target_concepts: Sequence[str] | None = None,
+) -> str:
+    """Stable directory suffix for the orthogonality weighting configuration."""
+    targets = [str(concept) for concept in _as_list(target_concepts)]
+    parts = [f"alpha{_sanitize_path_component(alpha)}"]
+    if targets:
+        parts.append(f"beta{_sanitize_path_component(beta)}")
+        parts.append(
+            "targets-" + "-".join(_sanitize_path_component(concept) for concept in targets)
+        )
+    return "_".join(parts)
+
+
 def get_save_dir(cfg: DictConfig) -> Path:
     cache_dir = Path(cfg.experiment.out)
-    model_name = f"alpha{cfg.cav.alpha}"
-    if cfg.cav.beta is not None:
-        model_name += f"_beta{cfg.cav.beta}_n_targets{cfg.cav.n_targets}"
+    target_concepts = get_target_concepts(cfg.cav)
+    model_name = format_orthogonality_config_name(
+        cfg.cav.alpha,
+        cfg.cav.get("beta", None),
+        target_concepts,
+    )
     model_name += f"_lr{cfg.train.learning_rate}"
     if cfg.cav.optimal_init:
         model_name += "_opt"
     return cache_dir / model_name
 
-def initialize_weights(C: torch.Tensor, labels: torch.Tensor, alpha: float, beta: float, n_targets: int, device: torch.device) -> torch.Tensor:
+
+def initialize_weights(
+    C: torch.Tensor,
+    concept_names: Sequence[str],
+    alpha: float,
+    beta: float | None,
+    target_concepts: Sequence[str] | None,
+    device: torch.device,
+) -> torch.Tensor:
     """Initialize the weights for the orthogonality loss.
+
     Args:
         C (torch.Tensor): Similarity matrix of shape (n_concepts, n_concepts).
-        labels (torch.Tensor): Binary labels of shape (n_samples, n_concepts).
-        alpha (float): Weight for the L2 regularization term.
-        beta (float): Weight for the orthogonality term.
-        n_targets (int): Number of target pairs to consider for orthogonality.
+        concept_names (Sequence[str]): Concept names in the same order as C.
+        alpha (float): Weight for pairs without any target concept.
+        beta (float | None): Weight for pairs involving at least one target concept.
+        target_concepts (Sequence[str] | None): Concepts that should use beta.
         device (torch.device): Device to perform computations on.
+
     Returns:
         torch.Tensor: Weights matrix of shape (n_concepts, n_concepts).
     """
-    if alpha == 0:
-        return 0
-    
-    weights = alpha * torch.ones_like(C, device=device)
+    names = [str(concept) for concept in concept_names]
+    if C.shape != (len(names), len(names)):
+        raise ValueError(
+            f"Expected C shape {(len(names), len(names))} for {len(names)} concepts, "
+            f"got {tuple(C.shape)}."
+        )
 
-    if beta != None:
-        # Extract the rows and cols
-        similarities = torch.triu(C.abs(), diagonal=1).clone()
-        sorted_indices = torch.argsort(similarities.flatten(), descending=True)
-        rows = sorted_indices // similarities.size(1)
-        cols = sorted_indices % similarities.size(1)
-        
-        # Iterate through ordered pairs and select the first k valid ones
-        selected_pairs = []
-        for i, j in zip(rows.tolist(), cols.tolist()):
-            if len(set(torch.where(labels[:, i] == 1)[0].tolist()).intersection(
-                   set(torch.where(labels[:, j] == 1)[0].tolist()))) != 0:
-                selected_pairs.append((i, j))
-                
-            if len(selected_pairs) == n_targets:
-                break
-        
-        # Assign weights for the selected pairs
-        for i, j in selected_pairs:
-            weights[i, j] = np.sqrt(beta)
-            weights[j, i] = np.sqrt(beta)
+    targets = [str(concept) for concept in _as_list(target_concepts)]
+    missing_targets = sorted(set(targets) - set(names))
+    if missing_targets:
+        raise ValueError(
+            "Unknown target_concepts: "
+            f"{missing_targets}. Available concepts: {names}."
+        )
 
+    weights = torch.full_like(C, float(alpha), device=device)
+    if not targets:
+        return weights
+
+    if beta is None:
+        raise ValueError("cav.beta must be set when cav.target_concepts is non-empty.")
+
+    target_indices = torch.tensor(
+        [names.index(concept) for concept in targets],
+        device=device,
+        dtype=torch.long,
+    )
+    target_mask = torch.zeros(C.shape[0], dtype=torch.bool, device=device)
+    target_mask[target_indices] = True
+    pair_mask = target_mask[:, None] | target_mask[None, :]
+    weights[pair_mask] = float(beta)
     return weights
 
 

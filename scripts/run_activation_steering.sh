@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # ------------- Hyperparameters  -------------
-ALPHAS=("1" "10" "100")      # Regularization weights for orthogonalization
+ALPHAS=("1" "10" "100")      # Non-target pair orthogonality weights
+BETA="null"                      # Target-involving pair weight when target concepts are set
+TARGET_CONCEPTS="[]"             # Example: [timestamp,box,brightness]
 # CAV_TRAIN_RATIO="${CAV_TRAIN_RATIO:-}"      # Optional ratio in (0, 1] for CAV training rows only
 # CAV_TRAIN_SUBSET_SEED="${CAV_TRAIN_SUBSET_SEED:-}"
 CAV_TRAIN_RATIO="0.1"      # Optional ratio in (0, 1] for CAV training rows only
@@ -20,6 +22,8 @@ fi
 echo "Running activation steering experiment with alpha=0"
 python -m experiments.run_activation_steering \
   dir_model.alpha="0" \
+  dir_model.beta="${BETA}" \
+  dir_model.target_concepts="${TARGET_CONCEPTS}" \
   dir_model.n_epochs="10" \
   dir_model.exit_criterion="auc" \
   "${SUBSET_OVERRIDES[@]}" \
@@ -29,6 +33,8 @@ for ALPHA in "${ALPHAS[@]}"; do
   echo "Running activation steering experiment with alpha=${ALPHA}"
   python -m experiments.run_activation_steering \
     dir_model.alpha="${ALPHA}" \
+    dir_model.beta="${BETA}" \
+    dir_model.target_concepts="${TARGET_CONCEPTS}" \
     "${SUBSET_OVERRIDES[@]}" \
     "$@"
 done

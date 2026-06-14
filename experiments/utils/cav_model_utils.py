@@ -13,7 +13,7 @@ RUNTIME_CAV_KEYS = {
     "cav_mode",
     "alpha",
     "beta",
-    "n_targets",
+    "target_concepts",
     "optimal_init",
     "exit_criterion",
 }

@@ -25,6 +25,8 @@ CAV_MODELS=(
   # "G_SAE"
 )
 ALPHAS=("0.1" "1" "10" "100" "1000")
+BETA="null"                         # Target-involving pair weight when target concepts are set
+TARGET_CONCEPTS="[]"                # Example: [timestamp,box,brightness]
 
 for CAV_MODEL in "${CAV_MODELS[@]}"; do
   for ALPHA in "${ALPHAS[@]}"; do
@@ -42,6 +44,8 @@ for CAV_MODEL in "${CAV_MODELS[@]}"; do
       train.learning_rate="${LR}" \
       alignment.split="${SPLIT}" \
       cav.alpha="${ALPHA}" \
+      cav.beta="${BETA}" \
+      cav.target_concepts="${TARGET_CONCEPTS}" \
       "$@"
   done
 done

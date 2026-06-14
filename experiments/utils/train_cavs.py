@@ -360,7 +360,12 @@ def train_cavs(
     C = cavs_original @ cavs_original.T
     _, order = reorder_similarity_matrix(C.detach().cpu().numpy())
     weights = initialize_weights(
-        C, labels, cfg.cav.alpha, cfg.cav.beta, cfg.cav.n_targets, device=device
+        C,
+        concept_names,
+        cfg.cav.alpha,
+        cfg.cav.get("beta", None),
+        cfg.cav.get("target_concepts", []),
+        device=device,
     )
 
     # Training metrics

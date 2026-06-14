@@ -13,7 +13,9 @@ OPTIMAL_INIT="false"             # true = CAV finetuning, false = training from 
 EXIT_CRITERION="None"            # Options: None, orthogonality, auc
 NUM_EPOCHS="100"
 LRS=("0.00001")                   # Learning rate for CAV optimization
-ALPHAS=("0" "0.1" "1" "10")      # Regularization weights for orthogonalization
+ALPHAS=("0" "0.1" "1" "10")      # Non-target pair orthogonality weights
+BETA="null"                         # Target-involving pair weight when target concepts are set
+TARGET_CONCEPTS="[]"                # Example: [timestamp,box,brightness]
 
 # ---------------------------------------------
 
@@ -32,6 +34,8 @@ for ALPHA in "${ALPHAS[@]}"; do
       train.num_epochs="${NUM_EPOCHS}" \
       train.learning_rate="${LR}" \
       cav.alpha="${ALPHA}" \
+      cav.beta="${BETA}" \
+      cav.target_concepts="${TARGET_CONCEPTS}" \
     "$@"
   done
 done
