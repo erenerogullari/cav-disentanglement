@@ -8,9 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from experiments.utils.utils import (
-    format_orthogonality_config_name,
-    get_target_concepts,
+from experiments.activation_steering.utils import (
+    get_dir_model_config_name,
+    get_moved_encodings_root,
 )
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -126,12 +126,8 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
 
     experiment_cfg = config.experiment
     move_cfg = config.move_encs
-    orthogonality_name = format_orthogonality_config_name(
-        config.dir_model.alpha,
-        config.dir_model.get("beta", None),
-        get_target_concepts(config.dir_model),
-    )
-    cache_dir = Path(config.experiment.out) / "moved_encs" / str(config.dir_model.name) / orthogonality_name
+    orthogonality_name = get_dir_model_config_name(config)
+    cache_dir = get_moved_encodings_root(config)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
 
