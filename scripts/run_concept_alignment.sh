@@ -24,13 +24,13 @@ CAV_MODELS=(
   "random_cav"
   # "G_SAE"
 )
-ALPHAS=("0.1" "1" "10" "100" "1000")
-BETA="null"                         # Target-involving pair weight when target concepts are set
-TARGET_CONCEPTS="[]"                # Example: [timestamp,box,brightness]
+BETAS=("0.1" "1" "10" "100")
+ALPHA="0"                         # Target-involving pair weight when target concepts are set
+TARGET_CONCEPTS="[timestamp,box,brightness]"                # Example: [timestamp,box,brightness]
 
 for CAV_MODEL in "${CAV_MODELS[@]}"; do
-  for ALPHA in "${ALPHAS[@]}"; do
-    echo "Running concept alignment experiment for ${CAV_MODEL} with alpha=${ALPHA}"
+  for BETA in "${BETAS[@]}"; do
+    echo "Running concept alignment experiment for ${CAV_MODEL} with alpha=${ALPHA} and beta=${BETA}"
     python -m experiments.run_concept_alignment \
       hardware@train="${HARDWARE}" \
       model="${MODEL}" \

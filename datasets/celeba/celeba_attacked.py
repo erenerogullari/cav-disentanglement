@@ -9,7 +9,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-ARTIFACT_CONCEPTS = ["timestamp", "box"]
+ARTIFACT_CONCEPTS = ["timestamp", "box", "brightness"]
 
 
 def get_celeba_attacked_dataset(
