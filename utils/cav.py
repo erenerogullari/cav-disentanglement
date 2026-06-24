@@ -289,7 +289,7 @@ def compute_cavs(
 
     :param vecs:    torch.Tensor of shape (n_samples, n_features)
     :param targets: torch.Tensor of shape (n_samples, n_concepts)
-    :param type:    str, type of CAV to compute. One of ["pattern_cav", "multi_cav", "svm_cav", "log_cav", "random_cav"]
+    :param type:    str, type of CAV to compute. One of ["pattern_cav", "multi_cav", "svm_cav", "log_cav", "ridge_cav", "random_cav"]
     :param normalize: bool, whether to normalize the CAVs to unit length
     :param cache_dir: Optional cache path. If provided, CAVs are loaded/saved from/to this file.
     :param random_seed: Optional seed used by stochastic CAV types such as "random_cav".
@@ -434,6 +434,57 @@ def compute_cavs(
                 clf = grid_search.best_estimator_
                 w = torch.tensor(clf.coef_[0], dtype=vecs.dtype)
                 b = torch.tensor(float(clf.intercept_[0]), dtype=vecs.dtype)
+
+            cavs_list.append(w)
+            bias_list.append(b)
+
+        cavs = torch.stack(cavs_list, dim=0)
+        bias = torch.stack(bias_list, dim=0)
+
+        if normalize:
+            norms = torch.norm(cavs, dim=1, keepdim=True).clamp_min(1e-12)
+            cavs = cavs / norms
+            bias = bias / norms.squeeze(1)
+
+        cavs = cavs.to(vecs.device)
+        bias = bias.to(vecs.device)
+
+    elif type == "ridge_cav":
+        X = vecs.detach().cpu().numpy()
+        Y = targets.detach().cpu().numpy()
+        alpha_grid = [10**i for i in range(-5, 5)]
+
+        cavs_list = []
+        bias_list = []
+        concept_iterator = tqdm(
+            range(Y.shape[1]),
+            desc="Ridge CAV grid search",
+            leave=False,
+        )
+        for concept_idx in concept_iterator:
+            y = Y[:, concept_idx]
+            unique_y = np.unique(y)
+
+            if unique_y.shape[0] < 2:
+                w = torch.zeros(vecs.shape[1], dtype=vecs.dtype)
+                b = torch.tensor(0.0, dtype=vecs.dtype)
+            else:
+                num_targets = max((y == 1).sum(), 1)
+                num_notargets = max((y == 0).sum(), 1)
+                sample_weights = (y == 1) * (1.0 / num_targets) + (y == 0) * (
+                    1.0 / num_notargets
+                )
+                sample_weights = sample_weights / sample_weights.max()
+
+                clf = Ridge(fit_intercept=True)
+                grid_search = GridSearchCV(
+                    clf,
+                    param_grid={"alpha": alpha_grid},
+                )
+                grid_search.fit(X, y * 2.0 - 1.0, sample_weight=sample_weights)
+                clf = grid_search.best_estimator_
+                w = torch.tensor(clf.coef_, dtype=vecs.dtype)
+                b = torch.tensor(float(clf.intercept_), dtype=vecs.dtype)
 
             cavs_list.append(w)
             bias_list.append(b)
