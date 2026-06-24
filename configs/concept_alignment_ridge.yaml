@@ -1,0 +1,9 @@
+defaults:
+  - concept_alignment
+  - override cav_model@cav: ridge_cav
+  - _self_
+
+cav:
+  alpha: 0
+  beta: null
+  target_concepts: []

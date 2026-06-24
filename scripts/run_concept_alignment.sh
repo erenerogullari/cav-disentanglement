@@ -7,7 +7,6 @@ MODEL="vgg16"                   # Options: vit_b_32, vit_b_16, vgg16, resnet18, 
 LAYER="features.29"
 CKPT_PATH="checkpoints/checkpoint_vgg16_celeba_attacked.pth"
 
-# CAV_MODEL="pattern_cav"         # Options: pattern_cav, multi_cav, svm_cav, log_cav, G_SAE, random_cav
 CAV_MODE="max"                  # Options: full, max, avg
 OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
 EXIT_CRITERION="auc"  # Options: None, orthogonality, auc
@@ -16,36 +15,26 @@ LR="0.0001"                     # Learning rate for CAV optimization
 SPLIT="test"                    # Options: train, val, test
 # MAX_SAMPLES="64"              # Optional debug cap
 
-CAV_MODELS=(
-  "pattern_cav"
-  "multi_cav"
-  "svm_cav"
-  "log_cav"
-  "random_cav"
-  # "G_SAE"
-)
-BETAS=("0.1" "1" "10" "100")
-ALPHA="0"                         # Target-involving pair weight when target concepts are set
-TARGET_CONCEPTS="[timestamp,box,brightness]"                # Example: [timestamp,box,brightness]
+ALPHAS=("0" "0.1" "1" "10")
+BETA="null"
+TARGET_CONCEPTS="[]"
 
-for CAV_MODEL in "${CAV_MODELS[@]}"; do
-  for BETA in "${BETAS[@]}"; do
-    echo "Running concept alignment experiment for ${CAV_MODEL} with alpha=${ALPHA} and beta=${BETA}"
-    python -m experiments.run_concept_alignment \
-      hardware@train="${HARDWARE}" \
-      model="${MODEL}" \
-      model.ckpt_path="${CKPT_PATH}" \
-      cav_model@cav="${CAV_MODEL}" \
-      cav.cav_mode="${CAV_MODE}" \
-      cav.optimal_init="${OPTIMAL_INIT}" \
-      cav.exit_criterion="${EXIT_CRITERION}" \
-      cav.layer="${LAYER}" \
-      train.num_epochs="${NUM_EPOCHS}" \
-      train.learning_rate="${LR}" \
-      alignment.split="${SPLIT}" \
-      cav.alpha="${ALPHA}" \
-      cav.beta="${BETA}" \
-      cav.target_concepts="${TARGET_CONCEPTS}" \
-      "$@"
-  done
+for ALPHA in "${ALPHAS[@]}"; do
+  echo "Running Ridge CAV concept alignment with alpha=${ALPHA} and beta=${BETA}"
+  python -m experiments.run_concept_alignment \
+    --config-name concept_alignment_ridge \
+    hardware@train="${HARDWARE}" \
+    model="${MODEL}" \
+    model.ckpt_path="${CKPT_PATH}" \
+    cav.cav_mode="${CAV_MODE}" \
+    cav.optimal_init="${OPTIMAL_INIT}" \
+    cav.exit_criterion="${EXIT_CRITERION}" \
+    cav.layer="${LAYER}" \
+    train.num_epochs="${NUM_EPOCHS}" \
+    train.learning_rate="${LR}" \
+    alignment.split="${SPLIT}" \
+    cav.alpha="${ALPHA}" \
+    cav.beta="${BETA}" \
+    cav.target_concepts="${TARGET_CONCEPTS}" \
+    "$@"
 done
