@@ -4,7 +4,7 @@ set -euo pipefail
 # ------------- Hyperparameters  -------------
 ALPHA="0"           # Target pair relevance weights
 BETAS=("1" "10" "100")      # Non-target pair orthogonality weights
-CAV_MODELS=("pattern_cav" "multi_cav" "log_cav" "svm_cav")  # CAV models to run activation steering with
+CAV_MODELS=("pattern_cav" "multi_cav" "log_cav" "svm_cav" "random_cav")  # CAV models to run activation steering with
 CAV_TRAIN_RATIO="0.1"      # Optional ratio in (0, 1] for CAV training rows only
 CAV_TRAIN_SUBSET_SEED="42" 
 
@@ -24,7 +24,6 @@ echo "Running activation steering for ${CAV_MODEL} experiment with alpha=0, beta
     dir_model.alpha="0" \
     dir_model.beta="0" \
     dir_model.n_epochs="10" \
-    dir_model.exit_criterion="auc" \
     "${SUBSET_OVERRIDES[@]}" \
     "$@"
 done
