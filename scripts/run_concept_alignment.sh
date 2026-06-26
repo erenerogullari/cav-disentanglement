@@ -15,11 +15,13 @@ LR="0.0001"                     # Learning rate for CAV optimization
 SPLIT="test"                    # Options: train, val, test
 # MAX_SAMPLES="64"              # Optional debug cap
 
-ALPHAS=("0" "0.1" "1" "10" "100")
-BETA="null"
-TARGET_CONCEPTS="[]"
+# ALPHAS=("0" "0.1" "1" "10" "100")
+# BETA="null"
+ALPHA="0"
+BETAS=("0.1")
+TARGET_CONCEPTS="[timestamp, box, brightness]"
 
-for ALPHA in "${ALPHAS[@]}"; do
+for BETA in "${BETAS[@]}"; do
   echo "Running Ridge CAV concept alignment with alpha=${ALPHA} and beta=${BETA}"
   python -m experiments.run_concept_alignment \
     hardware@train="${HARDWARE}" \
@@ -38,3 +40,5 @@ for ALPHA in "${ALPHAS[@]}"; do
     cav.target_concepts="${TARGET_CONCEPTS}" \
     "$@"
 done
+
+echo ""
