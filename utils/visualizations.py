@@ -235,12 +235,12 @@ def plot_metrics_over_time(
             ha="right",
         )
 
-    # Early exit visualization: red vertical dashed line with red label below the x-axis
+    # Selected checkpoint visualization: red vertical dashed line with red label below the x-axis
     if early_exit_epoch is not None:
         plt.axvline(x=early_exit_epoch, color="red", linestyle="--")
         ax = plt.gca()
 
-        # Color the x-axis tick label corresponding to early_exit_epoch in red
+        # Color the x-axis tick label corresponding to the selected epoch in red
         for tick in ax.get_xticklabels():
             try:
                 if float(tick.get_text()) == float(early_exit_epoch):

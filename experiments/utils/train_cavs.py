@@ -382,7 +382,7 @@ def train_cavs(
     best_auc = 0.0
     auc_epsilon = 0.01
     best_cavs = copy.deepcopy(cav_model).to("cpu")
-    early_exit_epoch = 0
+    early_exit_epoch = None
 
     ### MAIN LOOP ###
     for epoch in tqdm(range(cfg.train.num_epochs + 1), desc="Epochs"):
@@ -429,6 +429,7 @@ def train_cavs(
     else:
         log.info("No early exit criterion specified, using final epoch CAVs.")
         best_cavs = copy.deepcopy(cav_model).to("cpu")
+        early_exit_epoch = cfg.train.num_epochs
 
     # Save the results
     log.info(f"Training completed. Saving results to {save_dir}.")
