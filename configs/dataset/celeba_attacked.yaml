@@ -1,5 +1,6 @@
 _target_: datasets.get_celeba_attacked_dataset
-data_paths: ["/home/erogullari/datasets/"]
+data_paths: ["/media/erogullari/datasets/"]
+# data_paths: ["/Users/erogullari/datasets/"]
 normalize_data: True
 shuffle: True
 image_size: 224
@@ -10,4 +11,5 @@ artifact_type: ch_time
 time_format: datetime
 p_artifact: 0.4
 entanglement_factor: 5
+brightness_factor: 1.4
 name: celeba_attacked

@@ -1,0 +1,182 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            munowtc8zexrgowb3q25juxupb9jw8yl:
+                apple: {}
+                codePath: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/train_G_SAE_baseline.ipynb
+                codePathLocal: train_G_SAE_baseline.ipynb
+                cpu_count: 8
+                cpu_count_logical: 8
+                disk:
+                    /:
+                        total: "994662584320"
+                        used: "345344131072"
+                email: eren.erogullari@hhi.fraunhofer.de
+                executable: /Users/erogullari/miniconda3/envs/xai/bin/python
+                git:
+                    commit: e511a1538b18bec7c9de103d5aa11e35c3635250
+                    remote: git@github.com:erenerogullari/cav-disentanglement.git
+                host: K24631QNCC
+                memory:
+                    total: "17179869184"
+                os: macOS-26.3.1-arm64-arm-64bit
+                program: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/train_G_SAE_baseline.ipynb
+                python: CPython 3.10.19
+                root: /Users/erogullari/Desktop/Workspace/cav-disentanglement
+                startedAt: "2026-04-07T19:51:09.884431Z"
+                writerId: munowtc8zexrgowb3q25juxupb9jw8yl
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.10.19
+        t:
+            "1":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 41
+                - 49
+                - 53
+                - 71
+                - 103
+            "2":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 41
+                - 49
+                - 53
+                - 71
+                - 103
+            "3":
+                - 2
+                - 7
+                - 13
+                - 15
+                - 62
+                - 66
+            "4": 3.10.19
+            "5": 0.23.1
+            "6": 5.3.0
+            "8":
+                - 1
+            "10":
+                - 20
+            "12": 0.23.1
+            "13": darwin-arm64
+accelerator:
+    value: mps
+batch_size:
+    value: 16
+check_val_every_n_epoch:
+    value: 1
+checkpoint_dir:
+    value: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/G_SAE-latent_factor=6.0-topk_ratio=0.15
+cond_weight:
+    value: 1
+config:
+    value:
+        batch_size: 16
+        check_val_every_n_epoch: 1
+        checkpoint_dir: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/G_SAE-latent_factor=6.0-topk_ratio=0.15
+        cond_weight: 1
+        dataset: celeba_attacked
+        device: mps
+        direction_source: decoder
+        epochs: 100
+        export_path: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/exports/G_SAE-latent_factor=6.0-topk_ratio=0.15.pth
+        latent_cache_path: /Users/erogullari/Desktop/Workspace/cav-disentanglement/variables/celeba_attacked/vgg16/features.29.pth
+        latent_factor: 6
+        layer: features.29
+        learning_rate: 0.0001
+        max_samples: null
+        model: vgg16
+        name: G_SAE
+        num_workers: 0
+        recon_weight: 1
+        run_name: G_SAE-latent_factor=6.0-topk_ratio=0.15
+        save_optional_encoder_directions: false
+        seed: 23
+        suggested_baseline_path: /Users/erogullari/Desktop/Workspace/cav-disentanglement/variables/celeba_attacked/vgg16/features.29/G_SAE.pth
+        topk_ratio: 0.15
+        train_split: 0.8
+        wandb_entity: null
+        wandb_group: g-sae-celeba_attacked-vgg16-features.29
+        wandb_project: g-sae-training-1
+        weight_decay: 0
+dataset:
+    value: celeba_attacked
+device:
+    value: mps
+devices:
+    value: 1
+direction_source:
+    value: decoder
+epochs:
+    value: 100
+export_path:
+    value: /Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/exports/G_SAE-latent_factor=6.0-topk_ratio=0.15.pth
+grid_size:
+    value: 6
+latent_cache_path:
+    value: /Users/erogullari/Desktop/Workspace/cav-disentanglement/variables/celeba_attacked/vgg16/features.29.pth
+latent_factor:
+    value: 6
+layer:
+    value: features.29
+learning_rate:
+    value: 0.0001
+max_samples:
+    value: null
+model:
+    value: vgg16
+n_concepts:
+    value: 42
+n_features:
+    value: 512
+n_latents:
+    value: 3072
+n_samples:
+    value: 20438
+name:
+    value: G_SAE
+num_workers:
+    value: 0
+recon_weight:
+    value: 1
+run_name:
+    value: G_SAE-latent_factor=6.0-topk_ratio=0.15
+save_optional_encoder_directions:
+    value: false
+seed:
+    value: 23
+suggested_baseline_path:
+    value: /Users/erogullari/Desktop/Workspace/cav-disentanglement/variables/celeba_attacked/vgg16/features.29/G_SAE.pth
+topk:
+    value: 461
+topk_ratio:
+    value: 0.15
+train_size:
+    value: 16350
+train_split:
+    value: 0.8
+val_size:
+    value: 4088
+wandb_entity:
+    value: null
+wandb_group:
+    value: g-sae-celeba_attacked-vgg16-features.29
+wandb_project:
+    value: g-sae-training-1
+weight_decay:
+    value: 0

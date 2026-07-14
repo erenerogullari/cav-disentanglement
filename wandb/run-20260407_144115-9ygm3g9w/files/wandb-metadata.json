@@ -1,0 +1,29 @@
+{
+  "os": "macOS-26.3.1-arm64-arm-64bit",
+  "python": "CPython 3.10.19",
+  "startedAt": "2026-04-07T12:41:15.515588Z",
+  "program": "/Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/train_G_SAE_baseline.ipynb",
+  "codePath": "/Users/erogullari/Desktop/Workspace/cav-disentanglement/notebooks/train_G_SAE_baseline.ipynb",
+  "codePathLocal": "train_G_SAE_baseline.ipynb",
+  "git": {
+    "remote": "git@github.com:erenerogullari/cav-disentanglement.git",
+    "commit": "37c9dbe530533baf163877ba5a499177ec556c40"
+  },
+  "email": "eren.erogullari@hhi.fraunhofer.de",
+  "root": "/Users/erogullari/Desktop/Workspace/cav-disentanglement",
+  "host": "K24631QNCC",
+  "executable": "/Users/erogullari/miniconda3/envs/xai/bin/python",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "994662584320",
+      "used": "338960748544"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {},
+  "writerId": "y9953gd0r7e28zsohdeggke6fgbdnz12"
+}

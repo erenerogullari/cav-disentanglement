@@ -1,0 +1,187 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            upb076rmmu38pi0i69g74vmxe3ypwdve:
+                codePath: scripts/train_G_SAE_baseline.py
+                codePathLocal: scripts/train_G_SAE_baseline.py
+                cpu_count: 10
+                cpu_count_logical: 20
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "502391562240"
+                        used: "440585822208"
+                email: eren.erogullari@hhi.fraunhofer.de
+                executable: /home/erogullari/miniconda3/envs/xai/bin/python
+                git:
+                    commit: 83bc586e4b956d7cca866007a689a80d1b293558
+                    remote: git@github.com:erenerogullari/cav-disentanglement.git
+                gpu: Quadro P2000
+                gpu_count: 2
+                gpu_nvidia:
+                    - architecture: Pascal
+                      cudaCores: 1024
+                      memoryTotal: "5368709120"
+                      name: Quadro P2000
+                      uuid: GPU-c27f3c95-3374-8c1e-c4e3-44cea51091ec
+                    - architecture: Ampere
+                      cudaCores: 3584
+                      memoryTotal: "12884901888"
+                      name: NVIDIA GeForce RTX 3060
+                      uuid: GPU-de49c85e-358e-07ec-b731-afa20b3ef916
+                host: G450842
+                memory:
+                    total: "33569525760"
+                os: Linux-6.8.0-88-generic-x86_64-with-glibc2.39
+                program: /home/erogullari/Workspace/cav-disentanglement/scripts/train_G_SAE_baseline.py
+                python: CPython 3.10.18
+                root: /home/erogullari/Workspace/cav-disentanglement
+                startedAt: "2026-05-05T09:53:02.481418Z"
+                writerId: upb076rmmu38pi0i69g74vmxe3ypwdve
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.10.18
+        t:
+            "1":
+                - 1
+                - 9
+                - 41
+                - 103
+            "2":
+                - 1
+                - 9
+                - 41
+                - 103
+            "3":
+                - 2
+                - 7
+                - 13
+                - 15
+                - 62
+                - 66
+            "4": 3.10.18
+            "5": 0.23.1
+            "8":
+                - 2
+            "10":
+                - 20
+            "12": 0.23.1
+            "13": linux-x86_64
+accelerator:
+    value: gpu
+batch_size:
+    value: 16
+check_val_every_n_epoch:
+    value: 1
+checkpoint_dir:
+    value: /home/erogullari/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/G_SAE-latent_factor=6.0-topk_ratio=0.25
+cond_weight:
+    value: 1
+config:
+    value:
+        batch_size: 16
+        check_val_every_n_epoch: 1
+        checkpoint_dir: /home/erogullari/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/G_SAE-latent_factor=6.0-topk_ratio=0.25
+        cond_weight: 1
+        dataset: celeba
+        device: cuda
+        direction_source: decoder
+        epochs: 100
+        export_path: /home/erogullari/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/exports/G_SAE-latent_factor=6.0-topk_ratio=0.25.pth
+        latent_cache_path: /home/erogullari/Workspace/cav-disentanglement/variables/celeba/vgg16/features.28.pth
+        latent_factor: 6
+        layer: features.28
+        learning_rate: 0.0001
+        max_samples: null
+        model: vgg16
+        name: G_SAE
+        num_workers: 0
+        recon_weight: 1
+        run_name: G_SAE-latent_factor=6.0-topk_ratio=0.25
+        save_optional_encoder_directions: false
+        seed: 23
+        suggested_baseline_path: /home/erogullari/Workspace/cav-disentanglement/variables/celeba/vgg16/features.28/G_SAE.pth
+        topk_ratio: 0.25
+        train_split: 0.8
+        wandb_entity: null
+        wandb_group: g-sae-celeba-vgg16-features.28
+        wandb_mode: online
+        wandb_project: g-sae-training-1
+        weight_decay: 0
+dataset:
+    value: celeba
+device:
+    value: cuda
+devices:
+    value: 1
+direction_source:
+    value: decoder
+epochs:
+    value: 100
+export_path:
+    value: /home/erogullari/Workspace/cav-disentanglement/notebooks/checkpoints/g_sae_baseline/exports/G_SAE-latent_factor=6.0-topk_ratio=0.25.pth
+grid_size:
+    value: 6
+latent_cache_path:
+    value: /home/erogullari/Workspace/cav-disentanglement/variables/celeba/vgg16/features.28.pth
+latent_factor:
+    value: 6
+layer:
+    value: features.28
+learning_rate:
+    value: 0.0001
+max_samples:
+    value: null
+model:
+    value: vgg16
+n_concepts:
+    value: 40
+n_features:
+    value: 512
+n_latents:
+    value: 3072
+n_samples:
+    value: 202599
+name:
+    value: G_SAE
+num_workers:
+    value: 0
+recon_weight:
+    value: 1
+run_name:
+    value: G_SAE-latent_factor=6.0-topk_ratio=0.25
+save_optional_encoder_directions:
+    value: false
+seed:
+    value: 23
+suggested_baseline_path:
+    value: /home/erogullari/Workspace/cav-disentanglement/variables/celeba/vgg16/features.28/G_SAE.pth
+topk:
+    value: 768
+topk_ratio:
+    value: 0.25
+train_size:
+    value: 162079
+train_split:
+    value: 0.8
+val_size:
+    value: 40520
+wandb_entity:
+    value: null
+wandb_group:
+    value: g-sae-celeba-vgg16-features.28
+wandb_mode:
+    value: online
+wandb_project:
+    value: g-sae-training-1
+weight_decay:
+    value: 0

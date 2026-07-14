@@ -4,28 +4,22 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from tqdm import tqdm
-import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 import logging
 import os
 import copy
 import random
 from typing import Optional, Dict, Any
 import inspect
-import random
-from typing import Optional, Dict, Any
-import inspect
 from models import get_fn_model_loader
-from datasets import get_dataset
-from utils.cav import compute_cavs
+from utils.cav import compute_cavs, build_cav_cache_path
 from utils.metrics import (
     get_accuracy,
     get_avg_precision,
     get_uniqueness,
     compute_auc_performance,
     get_auconf,
-    get_confusion_matrices,
 )
 from utils.sim_matrix import reorder_similarity_matrix
 from experiments.utils.utils import (
@@ -33,6 +27,10 @@ from experiments.utils.utils import (
     initialize_weights,
     save_results,
     save_plots,
+)
+from experiments.utils.cav_model_utils import (
+    instantiate_cav_model,
+    validate_precomputed_g_sae_cache,
 )
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
@@ -117,15 +115,88 @@ def train_test_split(cfg, dataset, x_latent, labels):
         test_split=cfg.train.test_ratio,
         seed=cfg.train.random_seed,
     )
-    # train_data = x_latent[idxs_train]
-    # train_labels = labels[idxs_train]
-    train_data = x_latent
-    train_labels = labels
+    full_cav_experiments = ["concept_alignment", "model_correction"]
+    train_data = (
+        x_latent
+        if cfg.experiment.name in full_cav_experiments
+        else x_latent[idxs_train]
+    )
+    train_labels = (
+        labels if cfg.experiment.name in full_cav_experiments else labels[idxs_train]
+    )
     val_data = x_latent[idxs_val]
     val_labels = labels[idxs_val]
     test_data = x_latent[idxs_test]
     test_labels = labels[idxs_test]
     return train_data, train_labels, val_data, val_labels, test_data, test_labels
+
+
+def get_train_subset_ratio(cfg: DictConfig) -> float | None:
+    subset_cfg = cfg.train.get("subset", None)
+    if subset_cfg is None:
+        return None
+
+    ratio = subset_cfg.get("ratio", None)
+    if ratio is None:
+        return None
+
+    ratio = float(ratio)
+    if ratio <= 0 or ratio > 1:
+        raise ValueError(
+            f"cfg.train.subset.ratio must be in (0, 1], got {ratio}."
+        )
+    return ratio
+
+
+def get_train_subset_seed(cfg: DictConfig) -> int:
+    subset_cfg = cfg.train.get("subset", None)
+    if subset_cfg is None:
+        return int(cfg.train.random_seed)
+    return int(subset_cfg.get("seed", cfg.train.random_seed))
+
+
+def _format_train_subset_ratio(ratio: float) -> str:
+    return f"{ratio:.12g}"
+
+
+def apply_train_subset(
+    cfg: DictConfig,
+    train_latents: torch.Tensor,
+    train_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    ratio = get_train_subset_ratio(cfg)
+    if ratio is None:
+        return train_latents, train_labels
+
+    n_train = train_latents.shape[0]
+    if n_train == 0:
+        raise ValueError("Cannot apply cfg.train.subset.ratio to an empty train split.")
+
+    n_subset = int(np.ceil(n_train * ratio))
+    if n_subset >= n_train:
+        log.info(
+            "CAV train subset ratio=%s keeps all %s training samples.",
+            _format_train_subset_ratio(ratio),
+            n_train,
+        )
+        return train_latents, train_labels
+
+    seed = get_train_subset_seed(cfg)
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
+    subset_idxs = torch.randperm(n_train, generator=generator)[:n_subset]
+    subset_idxs = subset_idxs.sort().values
+
+    log.info(
+        "Subsampling CAV training rows: %s/%s samples (ratio=%s, seed=%s).",
+        n_subset,
+        n_train,
+        _format_train_subset_ratio(ratio),
+        seed,
+    )
+    latent_idxs = subset_idxs.to(train_latents.device)
+    label_idxs = subset_idxs.to(train_labels.device)
+    return train_latents[latent_idxs], train_labels[label_idxs]
 
 
 def train_epoch(dataloader, cav_model, weights, optimizer, device):
@@ -244,6 +315,7 @@ def train_cavs(
     train_latents, train_labels, val_latents, val_labels, _, _ = train_test_split(
         cfg, dataset, x_latent, labels
     )
+    train_latents, train_labels = apply_train_subset(cfg, train_latents, train_labels)
     train_dataset = TensorDataset(train_latents, train_labels)
     train_loader = DataLoader(
         train_dataset,
@@ -254,26 +326,46 @@ def train_cavs(
 
     # Initialize CAV model and weights (alpha)
     log.info(f"Initializing CAV model: {cfg.cav.name}")
-    raw_cav_cfg = OmegaConf.to_container(cfg.cav, resolve=True)
-    cav_cfg = {"_target_": raw_cav_cfg["_target_"]}  # type: ignore
-    cavs_original, bias_original = compute_cavs(
-        train_latents, train_labels, type=cfg.cav.name, normalize=True
+    cav_cache_path = build_cav_cache_path(
+        dataset_name=cfg.dataset.name,
+        model_name=cfg.model.name,
+        layer_name=cfg.cav.layer,
+        cav_type=cfg.cav.name,
+        random_seed=cfg.train.random_seed,
     )
-    cav_model = instantiate(
-        cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu"
-    )
+    if cfg.cav.name == "G_SAE":
+        validate_precomputed_g_sae_cache(cav_cache_path)
 
-    cav_model = instantiate(
-        cav_cfg, n_concepts=n_concepts, n_features=n_features, device="cpu"
+    cavs_original, bias_original = compute_cavs(
+        train_latents,
+        train_labels,
+        type=cfg.cav.name,
+        normalize=True,
+        cache_dir=cav_cache_path,
+        random_seed=cfg.train.random_seed,
+    )
+    cav_model = instantiate_cav_model(
+        cfg.cav,
+        n_concepts=n_concepts,
+        n_features=n_features,
+        device="cpu",
     )
 
     if cfg.cav.optimal_init:
-        cav_model.load_state_dict({"weights": cavs_original, "bias": bias_original})
+        if hasattr(cav_model, "set_params"):
+            cav_model.set_params(cavs_original, bias_original)
+        else:
+            cav_model.load_state_dict({"weights": cavs_original, "bias": bias_original})
     cav_model = cav_model.to(device)
     C = cavs_original @ cavs_original.T
     _, order = reorder_similarity_matrix(C.detach().cpu().numpy())
     weights = initialize_weights(
-        C, labels, cfg.cav.alpha, cfg.cav.beta, cfg.cav.n_targets, device=device
+        C,
+        concept_names,
+        cfg.cav.alpha,
+        cfg.cav.get("beta", None),
+        cfg.cav.get("target_concepts", []),
+        device=device,
     )
 
     # Training metrics
@@ -290,7 +382,7 @@ def train_cavs(
     best_auc = 0.0
     auc_epsilon = 0.01
     best_cavs = copy.deepcopy(cav_model).to("cpu")
-    early_exit_epoch = 0
+    early_exit_epoch = None
 
     ### MAIN LOOP ###
     for epoch in tqdm(range(cfg.train.num_epochs + 1), desc="Epochs"):
@@ -337,6 +429,7 @@ def train_cavs(
     else:
         log.info("No early exit criterion specified, using final epoch CAVs.")
         best_cavs = copy.deepcopy(cav_model).to("cpu")
+        early_exit_epoch = cfg.train.num_epochs
 
     # Save the results
     log.info(f"Training completed. Saving results to {save_dir}.")

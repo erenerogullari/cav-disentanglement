@@ -42,17 +42,16 @@ class CelebAAttackedHmDataset(CelebAAttackedDataset):
         image = self.transform_resize(image)
         target = torch.tensor(self.metadata.iloc[idx]["targets"])
 
-        # Art1
-        if self.art1_labels[idx]:
-            image, mask_art1 = self.add_artifact(image, idx, self.art1_type, **self.art1_kwargs)
-        else:
-            mask_art1 = torch.zeros((self.image_size, self.image_size)).float()
-
-        # Art2
-        if self.art2_labels[idx]:
-            image, mask_art2 = self.add_artifact(image, idx, self.art2_type, **self.art2_kwargs)
-        else:
-            mask_art2 = torch.zeros((self.image_size, self.image_size)).float()
+        artifact_masks = {}
+        for concept in self.artifact_concepts:
+            if self.artifact_labels_by_concept[concept][idx]:
+                artifact_type, kwargs = self.artifact_specs[concept]
+                image, mask = self.add_artifact(image, idx, artifact_type, **kwargs)
+                artifact_masks[concept] = mask.float()
+            else:
+                artifact_masks[concept] = torch.zeros(
+                    (self.image_size, self.image_size)
+                ).float()
 
         if self.transform:
             image = self.transform(image)
@@ -60,4 +59,4 @@ class CelebAAttackedHmDataset(CelebAAttackedDataset):
         if self.do_augmentation:
             image = self.augmentation(image)    # type: ignore
 
-        return image.float(), target, mask_art1, mask_art2  # type: ignore
+        return image.float(), target, artifact_masks  # type: ignore

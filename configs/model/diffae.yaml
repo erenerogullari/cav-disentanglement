@@ -1,4 +1,5 @@
 _target_: models.DiffAE
+name: diffae
 config_name: ffhq128_autoenc_130m
 path_ckpt: /media/erogullari/checkpoints/ffhq128.ckpt
 T_encode: 250

@@ -8,6 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from experiments.activation_steering.utils import (
+    get_dir_model_config_name,
+    get_moved_encodings_root,
+)
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from zennit.core import stabilize
@@ -122,8 +126,8 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
 
     experiment_cfg = config.experiment
     move_cfg = config.move_encs
-    alpha = config.dir_model.alpha 
-    cache_dir = Path(config.experiment.out) / "moved_encs" / str(config.dir_model.name) / f"alpha{alpha}"
+    orthogonality_name = get_dir_model_config_name(config)
+    cache_dir = get_moved_encodings_root(config)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -168,7 +172,7 @@ def run_move_encs(config: DictConfig, encodings: torch.Tensor, labels: torch.Ten
     # moved_encodings: Dict[Optional[float], torch.Tensor] = {}
 
     with torch.no_grad():
-        log.info("Moving encodings with direction model alpha=%s", alpha)
+        log.info("Moving encodings with direction model config=%s", orthogonality_name)
         dir_model = dir_model.to(device)
         dir_model.eval()
         dir_model.requires_grad_(False)

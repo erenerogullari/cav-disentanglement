@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+import torch.nn.functional as F
 import tqdm
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -17,7 +18,6 @@ from torch.utils.data import DataLoader
 from crp.attribution import CondAttribution
 from crp.image import imgify
 from models import get_canonizer
-from sklearn.metrics import jaccard_score
 from zennit.composites import EpsilonPlusFlat
 
 from experiments.model_correction.utils import load_base_model
@@ -28,9 +28,12 @@ from utils.localization import get_localizations, binarize_heatmaps
 from datasets import get_dataset
 
 log = logging.getLogger(__name__)
+CAV_PLOT_ORDER = ["Baseline", "Orthogonal"]
+BOX_MASK_DILATION_PIXELS = 3
+BOX_DILATED_CONCEPT_NAME = f"box_dilated_{BOX_MASK_DILATION_PIXELS}px"
 
 
-def _add_concept_relevance_errorbars(
+def _add_metric_errorbars(
     ax: plt.Axes, sem_lookup: dict[str, float], cav_order: list[str]
 ) -> None:
     for cav_name, container in zip(cav_order, ax.containers[: len(cav_order)]):
@@ -77,6 +80,130 @@ def _is_vit_model(model_name: str) -> bool:
     return model_name.startswith("vit")
 
 
+def _metric_sem(values: np.ndarray) -> float:
+    if len(values) == 0:
+        return float("nan")
+    return float(values.std() / np.sqrt(len(values)))
+
+
+def _store_metric_stats(
+    results_quant: dict[str, float],
+    metric_name: str,
+    concept_name: str,
+    cav_name: str,
+    values: np.ndarray,
+) -> None:
+    results_quant[f"{metric_name}_{concept_name}_{cav_name}"] = float(values.mean())
+    results_quant[f"{metric_name}_{concept_name}_{cav_name}_sem"] = _metric_sem(values)
+
+
+def _dilate_binary_masks(masks: torch.Tensor, padding: int) -> torch.Tensor:
+    if padding <= 0:
+        return masks
+    if masks.ndim != 3:
+        raise ValueError(
+            f"Expected masks with shape (N, H, W), got {tuple(masks.shape)}"
+        )
+    kernel_size = 2 * padding + 1
+    dilated = F.max_pool2d(
+        masks.float().unsqueeze(1),
+        kernel_size=kernel_size,
+        stride=1,
+        padding=padding,
+    ).squeeze(1)
+    return dilated.to(dtype=masks.dtype)
+
+
+def _build_metric_plot_frames(
+    results_quant: dict[str, float],
+    metric_name: str,
+    concept_name: str,
+    metric_label: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    data_plot = []
+    data_plot_std = []
+    for cav_name in CAV_PLOT_ORDER:
+        mean = results_quant.get(f"{metric_name}_{concept_name}_{cav_name}", 0.0)
+        sem = results_quant.get(f"{metric_name}_{concept_name}_{cav_name}_sem", 0.0)
+        data_plot.append((cav_name, mean))
+        data_plot_std.append((cav_name, mean, sem))
+    return (
+        pd.DataFrame(data_plot, columns=["CAV", metric_label]),
+        pd.DataFrame(data_plot_std, columns=["CAV", metric_label, "SEM"]),
+    )
+
+
+def _save_metric_plot(
+    data_plot: pd.DataFrame,
+    metric_label: str,
+    savename: Path,
+    ymin: float,
+    ymax: float,
+    ticks: list[float],
+) -> None:
+    sns.set_style("whitegrid")
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    sns.barplot(
+        x="CAV",
+        y=metric_label,
+        hue="CAV",
+        data=data_plot,
+        order=CAV_PLOT_ORDER,
+        hue_order=CAV_PLOT_ORDER,
+        ax=ax,
+    )
+    ax.set_ylabel(metric_label)
+    ax.set_ylim(ymin, ymax)
+    ax.set_yticks(ticks)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(True)
+    [
+        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
+        for ending in ["png", "pdf"]
+    ]
+    plt.close(fig)
+
+
+def _save_metric_plot_std(
+    data_plot: pd.DataFrame,
+    metric_label: str,
+    savename: Path,
+    ymin: float,
+    ymax: float,
+    ticks: list[float],
+) -> None:
+    sns.set_style("whitegrid")
+    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
+    fig, ax = plt.subplots(figsize=(2.5, 3))
+    ordered_df = data_plot.set_index("CAV").reindex(CAV_PLOT_ORDER).reset_index()
+    sns.barplot(
+        x="CAV",
+        y=metric_label,
+        hue="CAV",
+        data=ordered_df,
+        order=CAV_PLOT_ORDER,
+        hue_order=CAV_PLOT_ORDER,
+        errorbar=None,
+        ax=ax,
+    )
+    _add_metric_errorbars(
+        ax,
+        {row["CAV"]: float(row["SEM"]) for _, row in ordered_df.iterrows()},
+        CAV_PLOT_ORDER,
+    )
+    ax.set_ylabel(metric_label)
+    ax.set_ylim(ymin, ymax)
+    ax.set_yticks(ticks)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(True)
+    [
+        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
+        for ending in ["png", "pdf"]
+    ]
+    plt.close(fig)
+
+
 def evaluate_concept_heatmaps(
     cfg: DictConfig, cav_model: nn.Module, base_model: nn.Module, num_imgs: int = 16
 ) -> None:
@@ -90,12 +217,17 @@ def evaluate_concept_heatmaps(
         "Orthogonal": cavs_orthogonal.cpu(),
     }
     concept_names = dataset.get_concept_names()
-    concepts_to_plot = cfg.heatmaps.concepts
-    for cname in concepts_to_plot:
+    concepts_to_plot = []
+    for cname in list(cfg.heatmaps.concepts):
         if cname not in concept_names:
             log.warning(
                 f"Concept {cname} not found in dataset concepts. Available concepts: {concept_names}"
             )
+        else:
+            concepts_to_plot.append(cname)
+    if len(concepts_to_plot) == 0:
+        log.warning("No requested heatmap concepts are available. Skipping.")
+        return
 
     sample_ids = _select_heatmap_samples(dataset, cfg)
     if len(sample_ids) == 0:
@@ -156,63 +288,75 @@ def evaluate_concept_heatmaps(
         dataset,
         imgs[: min(len(imgs), num_imgs)],
         cav_localizations,
-        gts["timestamp"],
-        gts["box"],
+        gts,
+        concepts_to_plot,
         savepath,
     )
 
     results_quant = {}
+    metric_masks = {
+        cname: gts[cname]
+        for cname in concepts_to_plot
+        if cname in gts and gts[cname] is not None
+    }
+    if "box" in metric_masks:
+        metric_masks[BOX_DILATED_CONCEPT_NAME] = _dilate_binary_masks(
+            metric_masks["box"], BOX_MASK_DILATION_PIXELS
+        )
     for cav_name, locs in cav_localizations.items():
-        for cname in ["timestamp", "box"]:
-            if cname not in locs:
+        for cname, gt_mask in metric_masks.items():
+            loc_name = "box" if cname == BOX_DILATED_CONCEPT_NAME else cname
+            if loc_name not in locs:
                 continue
-            loc = locs[cname]
-            concept_rel = (loc * gts[cname]).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
+            loc = locs[loc_name]
+            concept_rel = (loc * gt_mask).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
             concept_rel_np = concept_rel.numpy()
-            loc_binary = binarize_heatmaps(loc, thresholding="otsu")
-            jaccards = np.array(
-                [
-                    jaccard_score(
-                        loc_binary[i].reshape(-1).numpy(),
-                        gts[cname][i].reshape(-1).numpy(),
-                    )
-                    for i in range(len(loc_binary))
-                ]
+            loc_binary = binarize_heatmaps(loc, thresholding="otsu").bool()
+            gt_binary = gt_mask.bool()
+            intersection = torch.logical_and(loc_binary, gt_binary).sum((1, 2)).float()
+            union = torch.logical_or(loc_binary, gt_binary).sum((1, 2)).float()
+            gt_area = gt_binary.sum((1, 2)).float()
+            ious = (intersection / (union + 1e-10)).numpy()
+            inter_over_true_mask = (intersection / (gt_area + 1e-10)).numpy()
+
+            _store_metric_stats(
+                results_quant, "concept_rel", cname, cav_name, concept_rel_np
             )
-            results_quant[f"iou_{cname}_{cav_name}"] = jaccards.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}"] = concept_rel_np.mean()
-            results_quant[f"concept_rel_{cname}_{cav_name}_sem"] = (
-                concept_rel_np.std() / np.sqrt(len(concept_rel_np))
+            _store_metric_stats(results_quant, "iou", cname, cav_name, ious)
+            _store_metric_stats(
+                results_quant,
+                "intersection_over_true_mask",
+                cname,
+                cav_name,
+                inter_over_true_mask,
             )
 
-    data_plot = pd.DataFrame(
-        data=[
-            ("Baseline", results_quant.get(f"concept_rel_timestamp_Baseline", 0.0)),
-            ("Orthogonal", results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0)),
-        ],
-        columns=["CAV", "Concept Relevance"],
-    )
-    vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
-    savepath_quant = results_dir / f"concept_relevance"
-    plot_concept_relevance(data_plot, vmax, savepath_quant)
-    data_plot_std = pd.DataFrame(
-        data=[
-            (
-                "Baseline",
-                results_quant.get(f"concept_rel_timestamp_Baseline", 0.0),
-                results_quant.get(f"concept_rel_timestamp_Baseline_sem", 0.0),
-            ),
-            (
-                "Orthogonal",
-                results_quant.get(f"concept_rel_timestamp_Orthogonal", 0.0),
-                results_quant.get(f"concept_rel_timestamp_Orthogonal_sem", 0.0),
-            ),
-        ],
-        columns=["CAV", "Concept Relevance", "SEM"],
-    )
-    plot_concept_relevance_std(
-        data_plot_std, vmax, results_dir / "concept_relevance_std"
-    )
+    for cname in metric_masks:
+        metric_prefix = "" if cname == "timestamp" else f"{cname}_"
+        data_plot, data_plot_std = _build_metric_plot_frames(
+            results_quant, "concept_rel", cname, "Concept Relevance"
+        )
+        vmax = 0.5 if data_plot["Concept Relevance"].max() > 0.44 else 0.45
+        savepath_quant = results_dir / f"{metric_prefix}concept_relevance"
+        plot_concept_relevance(data_plot, vmax, savepath_quant)
+        plot_concept_relevance_std(
+            data_plot_std, vmax, results_dir / f"{metric_prefix}concept_relevance_std"
+        )
+        for metric_name, metric_label in [
+            ("iou", "IoU"),
+            ("intersection_over_true_mask", "Intersection over True Mask"),
+        ]:
+            data_plot, data_plot_std = _build_metric_plot_frames(
+                results_quant, metric_name, cname, metric_label
+            )
+            plot_overlap_metric(
+                data_plot, metric_label, results_dir / f"{metric_prefix}{metric_name}"
+            )
+            plot_overlap_metric_std(
+                data_plot_std,
+                metric_label,
+                results_dir / f"{metric_prefix}{metric_name}_std",
+            )
 
     with open(results_dir / f"concept_relevance.pkl", "wb") as f:
         pickle.dump(results_quant, f)
@@ -221,50 +365,18 @@ def evaluate_concept_heatmaps(
 def plot_concept_relevance(
     data_plot: pd.DataFrame, vmax: float, savename: Path
 ) -> None:
-    sns.set_style("whitegrid")
-    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
-    fig = plt.figure(figsize=(2.5, 3))
-    sns.barplot(x="CAV", y="Concept Relevance", hue="CAV", data=data_plot)
     ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
     if vmax == 0.5:
         ticks.append(0.5)
-    plt.ylim(0.25, vmax)
-    plt.yticks(ticks)
-    [
-        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
-        for ending in ["png", "pdf"]
-    ]
-    plt.close(fig)
+    _save_metric_plot(data_plot, "Concept Relevance", savename, 0.25, vmax, ticks)
 
 
 def plot_concept_relevance_std(
     data_plot: pd.DataFrame, vmax: float, savename: Path
 ) -> None:
-    sns.set_style("whitegrid")
-    plt.rcParams.update({"font.size": 9, "legend.fontsize": 9, "axes.titlesize": 11})
-    fig, ax = plt.subplots(figsize=(2.5, 3))
-    cav_order = ["Baseline", "Orthogonal"]
-    ordered_df = data_plot.set_index("CAV").reindex(cav_order).reset_index()
-    sns.barplot(
-        x="CAV",
-        y="Concept Relevance",
-        hue="CAV",
-        data=ordered_df,
-        order=cav_order,
-        hue_order=cav_order,
-        errorbar=None,
-        ax=ax,
-    )
-    _add_concept_relevance_errorbars(
-        ax,
-        {row["CAV"]: float(row["SEM"]) for _, row in ordered_df.iterrows()},
-        cav_order,
-    )
-
-    ax.set_ylabel("Concept Relevance")
-    ymax = float((ordered_df["Concept Relevance"] + ordered_df["SEM"]).max())
+    ymax = float((data_plot["Concept Relevance"] + data_plot["SEM"]).max())
     vmax_plot = max(vmax, ymax + 0.01)
-    ymin = 0.25 if float(ordered_df["Concept Relevance"].min()) >= 0.25 else 0.0
+    ymin = 0.25 if float(data_plot["Concept Relevance"].min()) >= 0.25 else 0.0
     if ymin == 0.25:
         ticks = [0.25, 0.3, 0.35, 0.4, 0.45]
         if vmax_plot >= 0.5:
@@ -272,15 +384,28 @@ def plot_concept_relevance_std(
     else:
         vmax_plot = max(0.05, float(np.ceil(vmax_plot / 0.05) * 0.05))
         ticks = np.arange(ymin, vmax_plot + 1e-9, 0.05).tolist()
-    ax.set_ylim(ymin, vmax_plot)
-    ax.set_yticks(ticks)
-    ax.xaxis.grid(False)
-    ax.yaxis.grid(True)
-    [
-        fig.savefig(f"{savename}.{ending}", bbox_inches="tight", dpi=500)
-        for ending in ["png", "pdf"]
-    ]
-    plt.close(fig)
+    _save_metric_plot_std(
+        data_plot, "Concept Relevance", savename, ymin, vmax_plot, ticks
+    )
+
+
+def plot_overlap_metric(
+    data_plot: pd.DataFrame, metric_label: str, savename: Path
+) -> None:
+    vmax = min(
+        1.0, max(0.1, float(np.ceil(float(data_plot[metric_label].max()) / 0.1) * 0.1))
+    )
+    ticks = np.arange(0.0, vmax + 1e-9, 0.1).tolist()
+    _save_metric_plot(data_plot, metric_label, savename, 0.0, vmax, ticks)
+
+
+def plot_overlap_metric_std(
+    data_plot: pd.DataFrame, metric_label: str, savename: Path
+) -> None:
+    ymax = float((data_plot[metric_label] + data_plot["SEM"]).max())
+    vmax = min(1.0, max(0.1, float(np.ceil(ymax / 0.1) * 0.1)))
+    ticks = np.arange(0.0, vmax + 1e-9, 0.1).tolist()
+    _save_metric_plot_std(data_plot, metric_label, savename, 0.0, vmax, ticks)
 
 
 def compute_concept_relevances(
@@ -293,12 +418,22 @@ def compute_concept_relevances(
     batch_size: int = 8,
 ):
     localizations = {c: None for c in cavs.keys()}
-    gts = {"timestamp": None, "box": None}
+    artifact_names = list(cfg.heatmaps.artifacts)
+    gts = {c: None for c in artifact_names}
     layer_name = cfg.cav.layer
     hm_config = {"layer_name": layer_name}
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
     imgs = None
-    for x, _, loc_timestamp, loc_box in tqdm.tqdm(dl):
+    for batch in tqdm.tqdm(dl):
+        x = batch[0]
+        artifact_masks = batch[2]
+        if not isinstance(artifact_masks, dict):
+            if len(batch) == 4:
+                artifact_masks = {"timestamp": batch[2], "box": batch[3]}
+            else:
+                raise ValueError(
+                    "Expected heatmap dataset to return artifact masks as a dict."
+                )
         for cname, cav in cavs.items():
             attr, loc_cav = get_localizations(
                 x.clone(), cav, attribution, composite, hm_config, device
@@ -309,76 +444,49 @@ def compute_concept_relevances(
                 if localizations[cname] is None
                 else torch.cat([localizations[cname], loc_cav])
             )
-        gts["timestamp"] = (
-            loc_timestamp
-            if gts["timestamp"] is None
-            else torch.cat([gts["timestamp"], loc_timestamp])
-        )
-        gts["box"] = loc_box if gts["box"] is None else torch.cat([gts["box"], loc_box])
+        for cname in artifact_names:
+            if cname not in artifact_masks:
+                continue
+            mask = artifact_masks[cname]
+            gts[cname] = mask if gts[cname] is None else torch.cat([gts[cname], mask])
         imgs = x.detach().cpu() if imgs is None else torch.cat([imgs, x.detach().cpu()])
     return imgs, localizations, gts
 
 
 def create_plot(
-    ds, imgs, cav_localizations, gt_timestamp, gt_box, savepath: Path
+    ds, imgs, cav_localizations, gts, concepts_to_plot, savepath: Path
 ) -> None:
     num_cavs = len(cav_localizations)
     nrows = len(imgs)
-    ncols = 3 + 3 * num_cavs
+    plotted_concepts = [
+        cname
+        for cname in concepts_to_plot
+        if any(cname in localizations for localizations in cav_localizations.values())
+    ]
+    ncols = 1 + sum(
+        num_cavs + (1 if cname in gts and gts[cname] is not None else 0)
+        for cname in plotted_concepts
+    )
     size = 1.7
     level = 2.0
-    fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * size, nrows * size))
+    fig, axs = plt.subplots(
+        nrows, ncols, figsize=(ncols * size, nrows * size), squeeze=False
+    )
 
     for i in range(nrows):
         ax = axs[i][0]
         ax.imshow(ds.reverse_normalization(imgs[i]).permute((1, 2, 0)).int().numpy())
         axs[0][0].set_title("Input")
 
-        for cav_idx, (cav_name, localizations) in enumerate(cav_localizations.items()):
-            cname = "timestamp"
+        c = 1
+        for cname in plotted_concepts:
             all_maxs = [
-                all_concept_hms[cname][i].max()
+                all_concept_hms[cname][i].max().detach().float()
                 for _, all_concept_hms in cav_localizations.items()
+                if cname in all_concept_hms
             ]
-            normalization_constant = torch.max(torch.tensor(all_maxs))
-            c = 1 + cav_idx
-            ax = axs[i][c]
-            img_hm = imgify(
-                localizations[cname][i] / normalization_constant,
-                cmap="bwr",
-                vmin=-1,
-                vmax=1,
-                level=level,
-            )
-            ax.imshow(img_hm)
-            axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-            cname = "box"
-            all_maxs = [
-                all_concept_hms[cname][i].max()
-                for _, all_concept_hms in cav_localizations.items()
-            ]
-            normalization_constant = torch.max(torch.tensor(all_maxs))
-            c = 1 + num_cavs + 1 + cav_idx
-            ax = axs[i][c]
-            img_hm = imgify(
-                localizations[cname][i] / normalization_constant,
-                cmap="bwr",
-                vmin=-1,
-                vmax=1,
-                level=level,
-            )
-            ax.imshow(img_hm)
-            axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-            cname = "Blond_Hair"
-            if cname in localizations:
-                all_maxs = [
-                    all_concept_hms[cname][i].max()
-                    for _, all_concept_hms in cav_localizations.items()
-                ]
-                normalization_constant = torch.max(torch.tensor(all_maxs))
-                c = 1 + 2 * (num_cavs + 1) + cav_idx
+            normalization_constant = torch.stack(all_maxs).max().clamp_min(1e-12)
+            for cav_name, localizations in cav_localizations.items():
                 ax = axs[i][c]
                 img_hm = imgify(
                     localizations[cname][i] / normalization_constant,
@@ -389,16 +497,12 @@ def create_plot(
                 )
                 ax.imshow(img_hm)
                 axs[0][c].set_title(f"{cname}\n{cav_name}")
-
-        c = 1 + num_cavs
-        ax = axs[i][c]
-        ax.imshow(gt_timestamp[i].numpy())
-        axs[0][c].set_title("Ground Truth")
-
-        c = 1 + 2 * num_cavs + 1
-        ax = axs[i][c]
-        ax.imshow(gt_box[i].numpy())
-        axs[0][c].set_title("Ground Truth")
+                c += 1
+            if cname in gts and gts[cname] is not None:
+                ax = axs[i][c]
+                ax.imshow(gts[cname][i].numpy())
+                axs[0][c].set_title(f"{cname}\nGround Truth")
+                c += 1
 
     for _axs in axs:
         for ax in _axs:
@@ -410,3 +514,4 @@ def create_plot(
         fig.savefig(f"{savepath}.{ending}", bbox_inches="tight")
         for ending in ["png", "pdf"]
     ]
+    plt.close(fig)

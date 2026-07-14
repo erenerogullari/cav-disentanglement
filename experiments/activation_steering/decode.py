@@ -7,6 +7,11 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import torchvision
 from omegaconf import DictConfig
+from experiments.activation_steering.utils import (
+    get_decoding_output_root,
+    get_dir_model_config_name,
+    get_moved_encodings_root,
+)
 from tqdm import tqdm
 
 from hydra.utils import instantiate
@@ -52,16 +57,17 @@ def _format_float(value: float) -> str:
 #     torchvision.utils.save_image(tensor, str(path))
 
 
+
 def save_batch(
     output_root: Path,
     image_format: str,
-    alpha: float,
+    orthogonality_name: str,
     step_size: Optional[float],
     batch_indices: torch.Tensor,
     originals: torch.Tensor,
     decodings: torch.Tensor,
 ) -> None:
-    alpha_dir = output_root / f"alpha{_format_float(alpha)}"
+    alpha_dir = output_root / orthogonality_name
     index_list = batch_indices.detach().cpu().tolist()
 
     for i, img_idx in enumerate(index_list):
@@ -81,7 +87,7 @@ def save_batch(
 
 def run_decode(config: DictConfig) -> None:
     experiment_cfg = config.experiment
-    alpha = config.dir_model.alpha
+    orthogonality_name = get_dir_model_config_name(config)
 
     log.info("Seeding RNGs with %s", experiment_cfg.seed)
     seed_everything(int(experiment_cfg.seed))
@@ -97,7 +103,7 @@ def run_decode(config: DictConfig) -> None:
 
     image_format = getattr(experiment_cfg, "format", "png")
     cache_dir = Path(config.experiment.out)
-    output_root = cache_dir / "decodings" / config.dir_model.name
+    output_root = get_decoding_output_root(config)
     output_root.mkdir(parents=True, exist_ok=True)
 
     step_sizes = getattr(move_cfg, "step_sizes", None)
@@ -110,7 +116,7 @@ def run_decode(config: DictConfig) -> None:
         log.info("Decoding encodings for step size=%s", step_size)
         
         step_suffix = _format_float(step_size) if step_size is not None else "0"
-        path_out = cache_dir / "moved_encs" / str(config.dir_model.name) / f"alpha{alpha}" / f"step_size{step_suffix}"
+        path_out = get_moved_encodings_root(config) / f"step_size{step_suffix}"
         cfg_dataset = config.decode.dataset
         cfg_dataset.path_encodings = str(path_out)
         dataset = instantiate(cfg_dataset).get_subset_by_idxs(decode_idxs)
@@ -136,7 +142,7 @@ def run_decode(config: DictConfig) -> None:
             save_batch(
                 output_root=output_root,
                 image_format=image_format,
-                alpha=alpha,
+                orthogonality_name=orthogonality_name,
                 step_size=step_size,
                 batch_indices=batch_idx,
                 originals=batch_img,

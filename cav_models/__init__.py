@@ -1,2 +1,7 @@
 from .pattern_cav import PatternCAV
 from .multi_cav import MultiPatternCAV
+from .svm_cav import SvmCAV
+from .log_cav import LogCAV
+from .ridge_cav import RidgeCAV
+from .g_sae import G_SAE
+from .random_cav import RandomCAV
