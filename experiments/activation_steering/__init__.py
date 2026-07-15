@@ -2,3 +2,4 @@ from experiments.activation_steering.encode import run_encode
 from experiments.activation_steering.move_encs import run_move_encs
 from experiments.activation_steering.decode import run_decode
 from experiments.activation_steering.dir_model import get_dir_model
+from experiments.activation_steering.clip_classifier import ZeroShotCLIPConceptScorer

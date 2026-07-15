@@ -1,0 +1,123 @@
+import math
+import tempfile
+import unittest
+from pathlib import Path
+
+import torch
+from PIL import Image
+
+from experiments.activation_steering.clip_classifier import (
+    ZeroShotCLIPConceptScorer,
+)
+
+
+class _FakeCLIP(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.logit_scale = torch.nn.Parameter(torch.tensor(math.log(10.0)))
+
+    def encode_text(self, tokens):
+        return tokens.float()
+
+    def encode_image(self, images):
+        return images.mean(dim=(-1, -2))[:, :2]
+
+
+class _RecordingPreprocess:
+    def __init__(self):
+        self.modes = []
+
+    def __call__(self, image):
+        self.modes.append(image.mode)
+        pixels = torch.tensor(bytearray(image.tobytes()), dtype=torch.float32)
+        pixels = pixels.reshape(image.height, image.width, 3).permute(2, 0, 1)
+        return pixels / 255.0
+
+
+class CLIPConceptScorerTest(unittest.TestCase):
+    def setUp(self):
+        self.prompt_vectors = {
+            "negative one": [1.0, 0.0],
+            "negative two": [1.0, 0.2],
+            "positive one": [0.0, 1.0],
+            "positive two": [0.2, 1.0],
+        }
+        self.prompts = {
+            "attribute": {
+                # Deliberately insert positive first to test fixed class ordering.
+                "positive": ["positive one", "positive two"],
+                "negative": ["negative one", "negative two"],
+            }
+        }
+        self.preprocess = _RecordingPreprocess()
+        self.scorer = ZeroShotCLIPConceptScorer(
+            model_name="fake",
+            pretrained="fake",
+            prompts=self.prompts,
+            device="cpu",
+            model=_FakeCLIP(),
+            preprocess=self.preprocess,
+            tokenizer=self._tokenize,
+        )
+
+    def _tokenize(self, prompts):
+        return torch.tensor([self.prompt_vectors[prompt] for prompt in prompts])
+
+    def _save_image(self, path, mode, color):
+        Image.new(mode, (2, 2), color=color).save(path)
+
+    def test_prompt_ensembles_are_normalized_and_ordered_negative_positive(self):
+        prototypes = self.scorer.text_prototypes["attribute"]
+
+        torch.testing.assert_close(
+            prototypes.norm(dim=-1), torch.ones(2), atol=1e-6, rtol=1e-6
+        )
+        self.assertGreater(prototypes[0, 0], prototypes[0, 1])
+        self.assertGreater(prototypes[1, 1], prototypes[1, 0])
+
+    def test_predict_proba_preserves_batch_order_and_bounds(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = [Path(tmpdir) / name for name in ("red.png", "green.png")]
+            self._save_image(paths[0], "RGB", (255, 0, 0))
+            self._save_image(paths[1], "RGB", (0, 255, 0))
+
+            probabilities = self.scorer.predict_proba(paths, batch_size=1)[
+                "attribute"
+            ]
+
+        self.assertEqual(probabilities.shape, (2,))
+        self.assertTrue(torch.all((0.0 <= probabilities) & (probabilities <= 1.0)))
+        self.assertLess(probabilities[0].item(), 0.5)
+        self.assertGreater(probabilities[1].item(), 0.5)
+
+    def test_score_paths_returns_margins_and_converts_images_to_rgb(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = [Path(tmpdir) / name for name in ("gray.png", "rgba.png")]
+            self._save_image(paths[0], "L", 128)
+            self._save_image(paths[1], "RGBA", (0, 255, 0, 128))
+
+            scores = self.scorer.score_paths(paths, batch_size=2)
+
+        self.assertEqual(scores["margins"]["attribute"].shape, (2,))
+        self.assertEqual(self.preprocess.modes[-2:], ["RGB", "RGB"])
+
+    def test_invalid_prompts_and_prediction_inputs_fail_clearly(self):
+        with self.assertRaisesRegex(ValueError, "missing prompt classes"):
+            ZeroShotCLIPConceptScorer(
+                "fake",
+                "fake",
+                {"attribute": {"positive": ["positive one"]}},
+                "cpu",
+                model=_FakeCLIP(),
+                preprocess=self.preprocess,
+                tokenizer=self._tokenize,
+            )
+
+        with self.assertRaisesRegex(ValueError, "No image paths"):
+            self.scorer.predict_proba([])
+        with self.assertRaisesRegex(ValueError, "Unknown concept"):
+            self.scorer.predict_proba([Path("unused.png")], concepts=["missing"])
+
+
+if __name__ == "__main__":
+    unittest.main()
