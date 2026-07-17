@@ -41,3 +41,5 @@ alignment:
 heatmaps:
   concepts: [timestamp, box, brightness]
   artifacts: [timestamp, box, brightness]
+  concept_cleaning:
+    enabled: true

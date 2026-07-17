@@ -3,7 +3,7 @@ import logging
 from omegaconf import DictConfig
 from experiments.concept_alignment import evaluate_concept_alignment
 from experiments.model_correction import evaluate_concept_heatmaps
-from experiments.model_correction.dir_model import get_dir_models
+from experiments.model_correction.dir_model import get_dir_models_with_data
 
 log = logging.getLogger(__name__)
 
@@ -18,13 +18,19 @@ def run(cfg: DictConfig) -> None:
     log.info(f"Using device: {device}")
 
     log.info("1. Computing CAVs.")
-    dir_model, base_model = get_dir_models(cfg)
+    dir_model, base_model, activations, labels = get_dir_models_with_data(cfg)
 
     log.info("2. Evaluating concept alignment.")
     evaluate_concept_alignment(cfg, dir_model, base_model)
 
     log.info("3. Evaluating concept heatmaps.")
-    evaluate_concept_heatmaps(cfg, dir_model, base_model)
+    evaluate_concept_heatmaps(
+        cfg,
+        dir_model,
+        base_model,
+        activations=activations,
+        labels=labels,
+    )
 
     log.info("Experiment succesfully completed.")
 
