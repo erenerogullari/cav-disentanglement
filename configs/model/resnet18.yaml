@@ -1,4 +1,4 @@
 name: resnet18
-n_class: 153
+n_class: 2
 pretrained: True
-ckpt_path: "/media/erogullari/checkpoints/checkpoint_resnet18_elements.pth"
+ckpt_path: "/Users/erogullari/Desktop/Workspace/cav-disentanglement/checkpoints/checkpoint_resnet18_celeba.pth"
