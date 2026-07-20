@@ -22,8 +22,8 @@ configs/*
 configs/dataset/*
 configs/cav_model/*
 configs/model/*
-!configs/concept_alignment.yaml
-!configs/cav_model/random_cav.yaml
+# !configs/concept_alignment.yaml
+# !configs/cav_model/random_cav.yaml
 
 # Variables
 variables/
