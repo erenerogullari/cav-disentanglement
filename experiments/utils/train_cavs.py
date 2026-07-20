@@ -142,9 +142,7 @@ def get_train_subset_ratio(cfg: DictConfig) -> float | None:
 
     ratio = float(ratio)
     if ratio <= 0 or ratio > 1:
-        raise ValueError(
-            f"cfg.train.subset.ratio must be in (0, 1], got {ratio}."
-        )
+        raise ValueError(f"cfg.train.subset.ratio must be in (0, 1], got {ratio}.")
     return ratio
 
 

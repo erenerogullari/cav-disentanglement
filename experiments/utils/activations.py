@@ -90,58 +90,79 @@ def extract_latents(
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_name = f"{cfg.cav.layer}.pth"
     cache_path = cache_dir / cache_name
+    labels = dataset.get_labels().clamp(min=0)  # type: ignore
 
     if cache_path.exists():
         log.info(f"Loading cached latents from {cache_path}.")
         vars = torch.load(cache_path, weights_only=True)
         x_latent_all = vars["encs"]
-        labels = vars["labels"]
-    else:
-        log.info("No cached latents found. Extracting latents...")
-        dataloader = DataLoader(
-            dataset,
-            batch_size=cfg.train.batch_size,
-            num_workers=cfg.train.num_workers,
-            shuffle=False,
+        cached_labels = vars.get("labels")
+        cache_matches_dataset = (
+            x_latent_all.shape[0] == labels.shape[0]
+            and isinstance(cached_labels, torch.Tensor)
+            and torch.equal(cached_labels, labels)
+        )
+        if cache_matches_dataset:
+            return x_latent_all, labels
+
+        cached_label_shape = (
+            tuple(cached_labels.shape)
+            if isinstance(cached_labels, torch.Tensor)
+            else None
+        )
+        log.warning(
+            "Ignoring incompatible latent cache at %s: cached encodings/labels "
+            "have shapes %s/%s, current labels have shape %s.",
+            cache_path,
+            tuple(x_latent_all.shape),
+            cached_label_shape,
+            tuple(labels.shape),
         )
 
-        if _is_vit_model(cfg.model.name):
-            import zennit.rules as z_rules
-            from zennit.composites import LayerMapComposite
+    log.info("Extracting latents...")
+    dataloader = DataLoader(
+        dataset,
+        batch_size=cfg.train.batch_size,
+        num_workers=cfg.train.num_workers,
+        shuffle=False,
+    )
 
-            composite = LayerMapComposite(
-                [
-                    (torch.nn.Conv2d, z_rules.Gamma(100)),
-                    (torch.nn.Linear, z_rules.Gamma(0.1)),
-                ],
-                # canonizers=canonizers,
-            )
+    if _is_vit_model(cfg.model.name):
+        import zennit.rules as z_rules
+        from zennit.composites import LayerMapComposite
 
-        else:
-            canonizers = get_canonizer(cfg.model.name)
-            composite = EpsilonPlusFlat(canonizers=canonizers)
+        composite = LayerMapComposite(
+            [
+                (torch.nn.Conv2d, z_rules.Gamma(100)),
+                (torch.nn.Linear, z_rules.Gamma(0.1)),
+            ],
+            # canonizers=canonizers,
+        )
 
-        attribution = CondAttribution(model)
+    else:
+        canonizers = get_canonizer(cfg.model.name)
+        composite = EpsilonPlusFlat(canonizers=canonizers)
 
-        x_latent_all = []
-        for batch in tqdm(dataloader):
-            x, _ = batch
-            x_latent = _get_features(
-                x,
-                cfg.cav.layer,
-                attribution,
-                composite,
-                cfg.cav.cav_mode,
-                device=cfg.train.device,
-            )
-            x_latent = x_latent.detach().cpu()
-            x_latent_all.append(x_latent)
-        x_latent_all = torch.cat(x_latent_all)
-        labels = dataset.get_labels().clamp(min=0)  # type: ignore
+    attribution = CondAttribution(model)
 
-        vars = {"encs": x_latent_all, "labels": labels}
-        torch.save(vars, cache_path)
+    x_latent_all = []
+    for batch in tqdm(dataloader):
+        x, _ = batch
+        x_latent = _get_features(
+            x,
+            cfg.cav.layer,
+            attribution,
+            composite,
+            cfg.cav.cav_mode,
+            device=cfg.train.device,
+        )
+        x_latent = x_latent.detach().cpu()
+        x_latent_all.append(x_latent)
+    x_latent_all = torch.cat(x_latent_all)
 
-        log.info(f"Saved extracted latents to {cache_path}.")
+    vars = {"encs": x_latent_all, "labels": labels}
+    torch.save(vars, cache_path)
+
+    log.info(f"Saved extracted latents to {cache_path}.")
 
     return x_latent_all, labels

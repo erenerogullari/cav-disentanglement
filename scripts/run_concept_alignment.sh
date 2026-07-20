@@ -4,8 +4,8 @@ set -euo pipefail
 # Hyper parameters
 HARDWARE="workstation"                # Options: local, workstation
 MODEL="resnet18"                   # Options: vit_b_32, vit_b_16, vgg16, resnet18, ...
-LAYER="last_conv"
-CKPT_PATH="/media/erogullari/checkpoints/checkpoint_resnet18_celeba_attacked.pth"
+LAYER="last_conv"               # Options: features.29, last_conv, ...
+CKPT_PATH="/media/erogullari/checkpoints/checkpoint_${MODEL}_celeba_attacked.pth"
 
 CAV_MODE="max"                  # Options: full, max, avg
 OPTIMAL_INIT="true"             # true = CAV finetuning, false = training from scratch
@@ -14,8 +14,8 @@ NUM_EPOCHS="50"
 LR="0.0001"                     # Learning rate for CAV optimization
 SPLIT="test"                    # Options: train, val, test
 
-CAV_MODELS=("svm_cav" "ridge_cav" "random_cav")
-ALPHAS=("0" "0.1" "1" "10" "100")
+CAV_MODELS=("pattern_cav" "multi_cav" "log_cav" "svm_cav" "ridge_cav" "random_cav")
+ALPHAS=("0.1" "1" "10" "100")
 BETAS=("0.1"  "1" "10" "100")
 TARGET_CONCEPTS="[timestamp, box, brightness]"
 
