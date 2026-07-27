@@ -36,23 +36,8 @@ def get_vit(
 
     if n_class and n_class != 1000:
         model.heads.head = torch.nn.Linear(model.heads.head.in_features, n_class)
-    replace_conv = True
-    if replace_conv:
-        orig_conv = model.conv_proj
-        model.conv_proj = torch.nn.Sequential(
-            torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(
-                3,
-                orig_conv.out_channels,
-                kernel_size=orig_conv.kernel_size,
-                stride=orig_conv.stride,
-            ),
-        )
     if ckpt_path:
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
+        checkpoint = torch.load(ckpt_path, weights_only=True, map_location="cpu")
         if "state_dict" in checkpoint:
             checkpoint = checkpoint["state_dict"]
         elif "model_state_dict" in checkpoint:

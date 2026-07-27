@@ -20,6 +20,7 @@ from tqdm import tqdm
 from zennit.composites import EpsilonPlusFlat
 
 from experiments.utils.utils import get_save_dir
+from models import get_canonizer, requires_lxt_localization
 
 log = logging.getLogger(__name__)
 
@@ -41,12 +42,8 @@ def seed_everything(seed: int | None) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
-
-
 def _build_composite(cfg: DictConfig):
-    if _is_vit_model(cfg.model.name):
+    if requires_lxt_localization(cfg.model.name):
         import zennit.rules as z_rules
         from zennit.composites import LayerMapComposite
 
@@ -56,8 +53,6 @@ def _build_composite(cfg: DictConfig):
                 (torch.nn.Linear, z_rules.Gamma(0.1)),
             ]
         )
-
-    from models import get_canonizer
 
     canonizers = get_canonizer(cfg.model.name)
     return EpsilonPlusFlat(canonizers=canonizers)

@@ -9,7 +9,11 @@ from crp.attribution import CondAttribution
 from zennit import canonizers
 from zennit.composites import EpsilonPlusFlat
 from datasets import get_dataset
-from models import get_fn_model_loader, get_canonizer
+from models import (
+    get_fn_model_loader,
+    get_canonizer,
+    requires_lxt_localization,
+)
 from hydra.utils import instantiate
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -20,28 +24,25 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
-
-
 def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
+    if cav_mode not in {"full", "max", "avg"}:
+        raise ValueError(
+            f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
+        )
     batch.requires_grad = True
     dummy_cond = [{"y": 0} for _ in range(len(batch))]
     attr = attribution(
         batch.to(device), dummy_cond, composite, record_layer=[layer_name]
     )
+    acts = attr.activations[layer_name]
+    if acts.ndim <= 2:
+        return acts
     if cav_mode == "full":
-        features = attr.activations[layer_name]
+        features = acts
     elif cav_mode == "max":
-        acts = attr.activations[layer_name]
         features = acts.flatten(start_dim=2).max(2)[0]
     elif cav_mode == "avg":
-        acts = attr.activations[layer_name]
         features = acts.flatten(start_dim=2).mean(2)
-    else:
-        raise ValueError(
-            f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
-        )
     return features
 
 
@@ -127,7 +128,7 @@ def extract_latents(
         shuffle=False,
     )
 
-    if _is_vit_model(cfg.model.name):
+    if requires_lxt_localization(cfg.model.name):
         import zennit.rules as z_rules
         from zennit.composites import LayerMapComposite
 

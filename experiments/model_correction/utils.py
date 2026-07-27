@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from utils.metrics import calculate_metrics
-from torchvision.models import vision_transformer
 
 log = logging.getLogger(__name__)
 
@@ -74,10 +73,6 @@ def _select_from_mapping(cfg: Any, key: str) -> Any:
     return current
 
 
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
-
-
 def resolve_checkpoint_path(
     cfg: DictConfig | Mapping[str, Any], model_name: str, dataset_name: str
 ) -> Path:
@@ -93,12 +88,6 @@ def load_base_model(
 ) -> torch.nn.Module:
     """Instantiate the classification model used for CLArC evaluations."""
     device = torch.device(device)
-
-    if _is_vit_model(cfg.model.name):
-        from lxt.efficient import monkey_patch, monkey_patch_zennit
-
-        monkey_patch(vision_transformer, verbose=False)
-        monkey_patch_zennit(verbose=False)
 
     pretrained = getattr(cfg.model, "pretrained", True)
     ckpt_path = getattr(cfg.model, "ckpt_path", None)

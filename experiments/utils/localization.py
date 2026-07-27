@@ -15,7 +15,13 @@ import hydra
 from typing import Sequence
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models import get_fn_model_loader, get_canonizer, get_vgg16
+from models import (
+    get_fn_model_loader,
+    get_canonizer,
+    get_vgg16,
+    requires_lxt_localization,
+)
+from utils.reslrp_torchvision import attribute_concept
 from datasets import get_dataset
 from utils.visualizations import visualize_heatmaps, visualize_heatmap_pair
 from utils.cav import compute_cavs, build_cav_cache_path
@@ -23,8 +29,6 @@ from experiments.utils.activations import _get_features, extract_latents
 from experiments.utils.utils import get_save_dir
 from hydra.utils import get_original_cwd
 from pathlib import Path
-from torchvision.models import vision_transformer
-from lxt.efficient import monkey_patch, monkey_patch_zennit  # type: ignore
 
 log = logging.getLogger(__name__)
 
@@ -41,10 +45,6 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     else:
         log.info(f"Using provided checkpoint path: {checkpoint_path}")
         return Path(checkpoint_path)
-
-
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
 
 
 def get_localization(
@@ -71,20 +71,23 @@ def get_localization(
         torch.Tensor: Generated heatmaps.
     """
 
-    if _is_vit_model(model_name):
-        import zennit.rules as z_rules
-        from zennit.composites import LayerMapComposite
-
-        composite = LayerMapComposite(
-            [
-                (torch.nn.Conv2d, z_rules.Gamma(100)),
-                (torch.nn.Linear, z_rules.Gamma(0.1)),
-            ],
-            # canonizers=canonizers,
+    if requires_lxt_localization(model_name):
+        if cav_mode not in {"full", "max", "avg"}:
+            raise ValueError(
+                f"Invalid cav_mode: {cav_mode}. Choose from 'full', 'max', or 'avg'."
+            )
+        return (
+            attribute_concept(
+                model,
+                x.detach().to(device),
+                cav,
+                layer_name=layer,
+            )
+            .detach()
+            .cpu()
         )
 
-    else:
-        composite = EpsilonPlusFlat(canonizers)
+    composite = EpsilonPlusFlat(canonizers)
 
     attribution = CondAttribution(model)
     x = x.detach().to(device)
@@ -169,9 +172,6 @@ def localize_concepts(cfg: DictConfig) -> None:
 
     # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
-    if _is_vit_model(cfg.model.name):
-        monkey_patch(vision_transformer, verbose=False)
-        monkey_patch_zennit(verbose=False)
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     model = get_fn_model_loader(cfg.model.name)(
         ckpt_path=(
@@ -304,9 +304,6 @@ def colocalize_concept_pairs(cfg: DictConfig) -> None:
 
     # Load model and dataset
     log.info(f"Loading model: {cfg.model.name}")
-    if _is_vit_model(cfg.model.name):
-        monkey_patch(vision_transformer, verbose=False)
-        monkey_patch_zennit(verbose=False)
     ckpt_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
     model = get_fn_model_loader(cfg.model.name)(
         ckpt_path=(

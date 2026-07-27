@@ -67,6 +67,12 @@ MODELS_1D = [
     "vit",
 ]
 
+LXT_LOCALIZATION_MODELS = frozenset({"vit_b_16", "vit_b_32"})
+
+
+def requires_lxt_localization(model_name: str) -> bool:
+    return model_name in LXT_LOCALIZATION_MODELS
+
 
 def get_canonizer(model_name):
     assert model_name in list(

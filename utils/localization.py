@@ -4,8 +4,32 @@ import torch
 from experiments.utils.activations import get_features
 import torchvision.transforms as T
 from skimage.filters import threshold_otsu
+from models import requires_lxt_localization
+from utils.reslrp_torchvision import attribute_concept
 
-def get_localizations(x, cav, attribution, composite, config, device):
+
+def get_localizations(
+    x,
+    cav,
+    attribution,
+    composite,
+    config,
+    device,
+    *,
+    model_name="",
+    model=None,
+):
+    if requires_lxt_localization(model_name):
+        if model is None:
+            raise ValueError("ViT localization requires the classification model.")
+        hms = attribute_concept(
+            model,
+            x.to(device),
+            cav,
+            layer_name=config["layer_name"],
+        )
+        return None, hms.detach().cpu().clamp(min=0)
+
     _config = copy.deepcopy(config)
     _config["cav_mode"] = "cavs_full"
     _config["device"] = device

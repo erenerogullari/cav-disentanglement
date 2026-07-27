@@ -35,13 +35,8 @@ from experiments.utils.cav_model_utils import (
 from experiments.utils.activations import extract_latents
 from hydra.utils import get_original_cwd
 from pathlib import Path
-from torchvision.models import vision_transformer
 
 log = logging.getLogger(__name__)
-
-
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
 
 
 def seed_everything(seed: Optional[int]) -> None:
@@ -74,12 +69,6 @@ def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
 def _load_model(
     cfg_model: DictConfig, ckpt_path: Path, device: torch.device
 ) -> nn.Module:
-    if _is_vit_model(cfg_model.name):
-        from lxt.efficient import monkey_patch, monkey_patch_zennit  # type: ignore
-
-        monkey_patch(vision_transformer, verbose=False)
-        monkey_patch_zennit(verbose=False)
-
     model_loader = get_fn_model_loader(cfg_model.name)
     loader_kwargs = {
         "ckpt_path": (

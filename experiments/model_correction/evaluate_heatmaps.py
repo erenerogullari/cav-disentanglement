@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 
 from crp.attribution import CondAttribution
 from crp.image import imgify
-from models import get_canonizer
+from models import get_canonizer, requires_lxt_localization
 from zennit.composites import EpsilonPlusFlat
 
 from experiments.model_correction.utils import load_base_model
@@ -179,10 +179,6 @@ def _select_heatmap_samples(dataset, cfg: DictConfig) -> np.ndarray:
     if idxs_test is not None:
         selected_ids = np.intersect1d(selected_ids, np.array(idxs_test))
     return selected_ids
-
-
-def _is_vit_model(model_name: str) -> bool:
-    return model_name.startswith("vit")
 
 
 def _metric_sem(values: np.ndarray) -> float:
@@ -364,23 +360,13 @@ def evaluate_concept_heatmaps(
     if cleaning_enabled:
         log.info("Using post-hoc concept-cleaned CAVs for LRP localization.")
 
-    if _is_vit_model(cfg.model.name):
-        import zennit.rules as z_rules
-        from zennit.composites import LayerMapComposite
-
-        composite = LayerMapComposite(
-            [
-                (torch.nn.Conv2d, z_rules.Gamma(100)),
-                (torch.nn.Linear, z_rules.Gamma(0.1)),
-            ],
-            # canonizers=canonizers,
-        )
-
+    if requires_lxt_localization(cfg.model.name):
+        composite = None
+        attribution = None
     else:
         canonizers = get_canonizer(cfg.model.name)
         composite = EpsilonPlusFlat(canonizers=canonizers)
-
-    attribution = CondAttribution(classification_model)
+        attribution = CondAttribution(classification_model)
 
     save_dir = get_save_dir(cfg)
     results_dir = save_dir / "results"
@@ -394,6 +380,7 @@ def evaluate_concept_heatmaps(
             cname: cavs[concept_names.index(cname), :] for cname in concepts_to_plot
         }
         imgs, localizations, gts = compute_concept_relevances(
+            classification_model,
             attribution,
             ds_subset,
             cav_subset,
@@ -571,7 +558,8 @@ def plot_overlap_metric_std(
 
 
 def compute_concept_relevances(
-    attribution: CondAttribution,
+    classification_model: nn.Module,
+    attribution,
     ds,
     cavs: Dict[str, torch.Tensor],
     composite,
@@ -597,10 +585,16 @@ def compute_concept_relevances(
                     "Expected heatmap dataset to return artifact masks as a dict."
                 )
         for cname, cav in cavs.items():
-            attr, loc_cav = get_localizations(
-                x.clone(), cav, attribution, composite, hm_config, device
+            _, loc_cav = get_localizations(
+                x.clone(),
+                cav,
+                attribution,
+                composite,
+                hm_config,
+                device,
+                model_name=cfg.model.name,
+                model=classification_model,
             )
-            loc_cav = attr.heatmap.detach().cpu().clamp(min=0)
             localizations[cname] = (
                 loc_cav
                 if localizations[cname] is None

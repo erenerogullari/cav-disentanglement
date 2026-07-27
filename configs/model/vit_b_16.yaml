@@ -1,0 +1,4 @@
+name: vit_b_16
+n_class: 2
+pretrained: True
+ckpt_path: null
