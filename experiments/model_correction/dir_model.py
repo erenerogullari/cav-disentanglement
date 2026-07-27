@@ -88,7 +88,9 @@ def run_preprocessing(config: DictConfig) -> Tuple[torch.Tensor, torch.Tensor]:
     return activations, labels
 
 
-def get_dir_models(cfg: DictConfig) -> Tuple[nn.Module, nn.Module]:
+def get_dir_models_with_data(
+    cfg: DictConfig,
+) -> Tuple[nn.Module, nn.Module, torch.Tensor, torch.Tensor]:
     alpha = cfg.cav.alpha
     save_dir = get_save_dir(cfg)
     state_path = save_dir / "state_dict.pth"
@@ -111,4 +113,9 @@ def get_dir_models(cfg: DictConfig) -> Tuple[nn.Module, nn.Module]:
 
     base_model = load_base_cav_model(cfg, activations, labels)
 
+    return dir_model, base_model, activations, labels
+
+
+def get_dir_models(cfg: DictConfig) -> Tuple[nn.Module, nn.Module]:
+    dir_model, base_model, _, _ = get_dir_models_with_data(cfg)
     return dir_model, base_model
