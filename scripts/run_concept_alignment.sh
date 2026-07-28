@@ -3,18 +3,8 @@ set -euo pipefail
 
 # Hyper parameters
 HARDWARE="workstation"                # Options: local, workstation
-MODEL="resnet18"                   # Options: vit_b_32, vit_b_16, vgg16, resnet18, ...
-case "${MODEL}" in
-  vit_b_16|vit_b_32)
-    LAYER="inspection_layer"
-    ;;
-  vgg16)
-    LAYER="features.29"
-    ;;
-  *)
-    LAYER="last_conv"
-    ;;
-esac
+MODEL="vit_b_16"                   # Options: vgg16, resnet18, vit_b_16 ...
+LAYER="inspection_layer"          # Options: features.29, last_conv, inspection_layer, ...
 CKPT_PATH="/media/erogullari/checkpoints/checkpoint_${MODEL}_celeba_attacked.pth"
 
 CAV_MODE="max"                  # Options: full, max, avg
