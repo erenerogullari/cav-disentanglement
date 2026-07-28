@@ -18,23 +18,12 @@ notebooks/wandb/
 checkpoints/
 
 # Configurations
-configs/*
-configs/dataset/*
-configs/cav_model/*
-configs/model/*
-!configs/model/
-configs/model/*
-!configs/model/vit_b_16.yaml
-!configs/model/vit_b_32.yaml
-# !configs/concept_alignment.yaml
-# !configs/cav_model/random_cav.yaml
+configs/
 
 # Variables
 variables/
 
 # Other
-# notebooks/train_model_elements.ipynb
-# DS_Store files
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

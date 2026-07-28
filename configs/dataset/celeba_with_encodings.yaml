@@ -1,5 +1,0 @@
-_target_: datasets.CelebAHQWithEncodings
-path_data: /media/erogullari/datasets/celeba_diffae/images
-path_encodings: /media/erogullari/datasets/celeba_diffae/encodings
-n_samples: 202599
-name: celeba
