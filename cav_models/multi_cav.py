@@ -20,11 +20,13 @@ class MultiPatternCAV(nn.Module):
 
     def train_step(self, x, y, W):
         predictions = self(y)
-        cav_loss = F.mse_loss(predictions, x)
+        n_concepts = self.weights.shape[0]
+        # This is the optimization-scaled component, not the raw reconstruction MSE.
+        cav_loss = F.mse_loss(predictions, x) / n_concepts
 
         C = self.weights @ self.weights.T 
         identity = torch.eye(C.shape[0], device=self.weights.device)
-        orthogonality_loss = torch.norm(W * (C - identity), p='fro') / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p='fro')
 
         return cav_loss, orthogonality_loss
 
@@ -32,11 +34,13 @@ class MultiPatternCAV(nn.Module):
     @torch.no_grad()
     def val_step(self, x, y, W):
         predictions = self(y)
-        cav_loss = F.mse_loss(predictions, x)
+        n_concepts = self.weights.shape[0]
+        # This is the optimization-scaled component, not the raw reconstruction MSE.
+        cav_loss = F.mse_loss(predictions, x) / n_concepts
 
         C = self.weights @ self.weights.T 
         identity = torch.eye(C.shape[0], device=self.weights.device)
-        orthogonality_loss = torch.norm(W * (C - identity), p='fro') / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p='fro')
 
         return cav_loss, orthogonality_loss
     

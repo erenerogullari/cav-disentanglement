@@ -127,7 +127,7 @@ class G_SAE(nn.Module):
         directions = self._concept_directions()
         C = directions @ directions.T
         identity = torch.eye(C.shape[0], device=C.device, dtype=C.dtype)
-        orthogonality_loss = torch.norm(W * (C - identity), p="fro") / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p="fro")
         return cav_loss, orthogonality_loss
 
     @torch.no_grad()
@@ -141,7 +141,7 @@ class G_SAE(nn.Module):
         directions = self._concept_directions()
         C = directions @ directions.T
         identity = torch.eye(C.shape[0], device=C.device, dtype=C.dtype)
-        orthogonality_loss = torch.norm(W * (C - identity), p="fro") / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p="fro")
         return cav_loss, orthogonality_loss
 
     def get_direction(self, idx: int):

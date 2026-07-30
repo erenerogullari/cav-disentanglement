@@ -20,7 +20,7 @@ class RandomCAV(nn.Module):
 
         C = self.weights @ self.weights.T
         identity = torch.eye(C.shape[0], device=self.weights.device, dtype=C.dtype)
-        orthogonality_loss = torch.norm(W * (C - identity), p="fro") / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p="fro")
 
         return cav_loss, orthogonality_loss
 
@@ -33,7 +33,7 @@ class RandomCAV(nn.Module):
 
         C = self.weights @ self.weights.T
         identity = torch.eye(C.shape[0], device=self.weights.device, dtype=C.dtype)
-        orthogonality_loss = torch.norm(W * (C - identity), p="fro") / C.numel()
+        orthogonality_loss = torch.norm(W * (C - identity), p="fro")
 
         return cav_loss, orthogonality_loss
 
