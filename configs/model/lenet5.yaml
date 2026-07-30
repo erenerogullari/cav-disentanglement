@@ -1,5 +1,0 @@
-name: lenet5
-n_class: 69
-pretrained: False
-in_channels: 3
-input_size: 224
