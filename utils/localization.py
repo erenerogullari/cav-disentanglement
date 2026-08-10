@@ -8,6 +8,30 @@ from models import requires_lxt_localization
 from utils.reslrp_torchvision import attribute_concept
 
 
+def compute_concept_relevance(
+    heatmaps: torch.Tensor,
+    masks: torch.Tensor,
+    eps: float = 1e-10,
+) -> torch.Tensor:
+    """Return the fraction of positive relevance inside each artifact mask."""
+    if heatmaps.ndim not in {2, 3}:
+        raise ValueError(
+            "Expected heatmaps with shape (H, W) or (N, H, W), got "
+            f"{tuple(heatmaps.shape)}"
+        )
+    if masks.shape != heatmaps.shape:
+        raise ValueError(
+            "Heatmaps and masks must have matching shapes, got "
+            f"{tuple(heatmaps.shape)} and {tuple(masks.shape)}"
+        )
+
+    positive_relevance = heatmaps.clamp(min=0)
+    masks = masks.to(positive_relevance)
+    numerator = (positive_relevance * masks).sum(dim=(-2, -1))
+    denominator = positive_relevance.sum(dim=(-2, -1)) + eps
+    return numerator / denominator
+
+
 def get_localizations(
     x,
     cav,

@@ -24,7 +24,11 @@ from experiments.model_correction.utils import load_base_model
 from experiments.utils.activations import extract_latents
 from experiments.utils.utils import get_save_dir
 from utils.cav import compute_cavs
-from utils.localization import get_localizations, binarize_heatmaps
+from utils.localization import (
+    binarize_heatmaps,
+    compute_concept_relevance,
+    get_localizations,
+)
 from datasets import get_dataset
 
 log = logging.getLogger(__name__)
@@ -423,7 +427,7 @@ def evaluate_concept_heatmaps(
             if loc_name not in locs:
                 continue
             loc = locs[loc_name]
-            concept_rel = (loc * gt_mask).sum((1, 2)) / (loc.sum((1, 2)) + 1e-10)
+            concept_rel = compute_concept_relevance(loc, gt_mask)
             concept_rel_np = concept_rel.numpy()
             loc_binary = binarize_heatmaps(loc, thresholding="otsu").bool()
             gt_binary = gt_mask.bool()
