@@ -7,6 +7,7 @@ from datasets.celeba.celeba_attacked_hm import get_celeba_attacked_hm_dataset
 from datasets.elements.elements import get_elements_dataset
 from datasets.funnybirds.funnybirds import get_funnybirds
 from datasets.funnybirds.funnybirds_attributes import get_funnybirds_attributes
+from datasets.coco import get_coco_dataset
 from datasets.base_dataset import BaseDataset
 from datasets.celeba.celebahq import CelebAHQ
 from datasets.celeba.celebahq_with_encodings import CelebAHQWithEncodings
@@ -21,6 +22,7 @@ DATASETS = {
     "celeba_attacked": get_celeba_attacked_dataset,
     "celeba_attacked_hm": get_celeba_attacked_hm_dataset,
     "elements": get_elements_dataset,
+    "coco": get_coco_dataset,
 }
 
 
