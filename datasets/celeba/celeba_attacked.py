@@ -9,7 +9,59 @@ import logging
 
 log = logging.getLogger(__name__)
 
-ARTIFACT_CONCEPTS = ["timestamp", "box", "brightness"]
+ARTIFACT_CONCEPT_POOL = [
+    "timestamp",
+    "box",
+    "brightness",
+    "checkerboard",
+    "watermark",
+]
+
+
+def get_active_artifact_concepts(num_concepts):
+    if isinstance(num_concepts, bool) or not isinstance(num_concepts, (int, np.integer)):
+        raise TypeError("num_concepts must be an integer.")
+    if not 1 <= int(num_concepts) <= len(ARTIFACT_CONCEPT_POOL):
+        raise ValueError(
+            f"num_concepts must be between 1 and {len(ARTIFACT_CONCEPT_POOL)}, "
+            f"got {num_concepts}."
+        )
+    return ARTIFACT_CONCEPT_POOL[: int(num_concepts)]
+
+
+def generate_artifact_labels(
+    targets,
+    attacked_classes,
+    num_concepts=3,
+    p_artifact=0.5,
+    cooccurrence_probability=0.5,
+    entanglement_factor=5,
+    artifact_seed=0,
+):
+    concepts = get_active_artifact_concepts(num_concepts)
+    if not 0 <= p_artifact <= 1:
+        raise ValueError("p_artifact must be between 0 and 1.")
+    if not 0 <= cooccurrence_probability <= 1:
+        raise ValueError("cooccurrence_probability must be between 0 and 1.")
+    if entanglement_factor <= 0:
+        raise ValueError("entanglement_factor must be positive.")
+
+    targets = np.asarray(targets)
+    attacked_classes = set(attacked_classes)
+    rng = np.random.RandomState(artifact_seed)
+    timestamp_probabilities = np.where(
+        np.isin(targets, list(attacked_classes)), p_artifact, 0.005
+    )
+    labels = {
+        "timestamp": rng.rand(len(targets)) < timestamp_probabilities,
+    }
+    p_without_timestamp = cooccurrence_probability / entanglement_factor
+    for concept in concepts[1:]:
+        conditional_probabilities = np.where(
+            labels["timestamp"], cooccurrence_probability, p_without_timestamp
+        )
+        labels[concept] = rng.rand(len(targets)) < conditional_probabilities
+    return labels
 
 
 def get_celeba_attacked_dataset(
@@ -19,6 +71,10 @@ def get_celeba_attacked_dataset(
     attacked_classes=[],
     p_artifact=0.5,
     artifact_type="ch_text",
+    num_concepts=3,
+    cooccurrence_probability=0.5,
+    entanglement_factor=5,
+    artifact_seed=0,
     **kwargs,
 ):
     fns_transform = [
@@ -39,13 +95,15 @@ def get_celeba_attacked_dataset(
         p_artifact=p_artifact,
         artifact_type=artifact_type,
         image_size=image_size,
+        num_concepts=num_concepts,
+        cooccurrence_probability=cooccurrence_probability,
+        entanglement_factor=entanglement_factor,
+        artifact_seed=artifact_seed,
         **kwargs,
     )
 
 
 class CelebAAttackedDataset(CelebASubset):
-    artifact_concepts = ARTIFACT_CONCEPTS
-
     def __init__(
         self,
         data_paths,
@@ -55,6 +113,10 @@ class CelebAAttackedDataset(CelebASubset):
         p_artifact=0.2,
         artifact_type="ch_text",
         image_size=224,
+        num_concepts=3,
+        cooccurrence_probability=0.5,
+        entanglement_factor=5,
+        artifact_seed=0,
         val_split=0.1,
         test_split=0.1,
         seed=42,
@@ -68,58 +130,35 @@ class CelebAAttackedDataset(CelebASubset):
         self.transform_resize = T.Resize(
             (image_size, image_size), interpolation=T.InterpolationMode.BICUBIC
         )
-
-        ## art1 dependant on target (spurious correlation)
-        p_art1_base = 0.005
-        p_art1 = {
-            cl: p_artifact if cl in attacked_classes else p_art1_base
-            for cl in self.metadata.targets.drop_duplicates().values
-        }
-
-        ## art2 dependant on art1 (correlated feature)
-        base_prob = 0.5
-        entanglement_factor = artifact_kwargs["entanglement_factor"]
-        p_art2 = {0: base_prob / entanglement_factor, 1: base_prob}
-        ## art3 dependant on art1 only (correlated brightness)
-        p_art3 = {0: base_prob / entanglement_factor, 1: base_prob}
-
-        self.art1_type = artifact_type
-        self.art2_type = "random_box"
-        self.art3_type = "brightness"
-
-        self.art1_kwargs = artifact_kwargs
-        self.art2_kwargs = {}
-        self.art3_kwargs = {
+        self.num_concepts = int(num_concepts)
+        self.artifact_concepts = get_active_artifact_concepts(num_concepts)
+        self.artifact_seed = int(artifact_seed)
+        timestamp_kwargs = dict(artifact_kwargs)
+        timestamp_kwargs.setdefault("img_size", image_size)
+        brightness_kwargs = {
             "factor": artifact_kwargs.get(
                 "brightness_factor", artifact_kwargs.get("factor", 1.4)
             )
         }
-        self.artifact_specs = {
-            "timestamp": (self.art1_type, self.art1_kwargs),
-            "box": (self.art2_type, self.art2_kwargs),
-            "brightness": (self.art3_type, self.art3_kwargs),
+        all_artifact_specs = {
+            "timestamp": (artifact_type, timestamp_kwargs),
+            "box": ("random_box", {}),
+            "brightness": ("brightness", brightness_kwargs),
+            "checkerboard": ("checkerboard", {}),
+            "watermark": ("watermark", {}),
         }
-
-        np.random.seed(0)
-        self.art1_labels = np.array(
-            [
-                np.random.rand() < p_art1[self.metadata.iloc[i].targets]
-                for i in range(len(self))
-            ]
-        )
-
-        self.art2_labels = np.array(
-            [
-                np.random.rand() < p_art2[int(self.art1_labels[i])]
-                for i in range(len(self))
-            ]
-        )
-
-        self.art3_labels = np.array(
-            [
-                np.random.rand() < p_art3[int(self.art1_labels[i])]
-                for i in range(len(self))
-            ]
+        self.artifact_specs = {
+            concept: all_artifact_specs[concept]
+            for concept in self.artifact_concepts
+        }
+        self.artifact_labels_by_concept = generate_artifact_labels(
+            self.metadata.targets.to_numpy(),
+            attacked_classes=attacked_classes,
+            num_concepts=num_concepts,
+            p_artifact=p_artifact,
+            cooccurrence_probability=cooccurrence_probability,
+            entanglement_factor=entanglement_factor,
+            artifact_seed=artifact_seed,
         )
 
         self._refresh_artifact_indices()
@@ -130,21 +169,14 @@ class CelebAAttackedDataset(CelebASubset):
             self.metadata.loc[sample_ids, concept] = 1  # type: ignore
 
         log.info(
-            "Inserted artifacts: timestamp (%s) / box (%s) / brightness (%s)",
-            self.art1_labels.sum(),
-            self.art2_labels.sum(),
-            self.art3_labels.sum(),
+            "Inserted artifacts: %s",
+            " / ".join(
+                f"{concept} ({int(labels.sum())})"
+                for concept, labels in self.artifact_labels_by_concept.items()
+            ),
         )
 
     def _refresh_artifact_indices(self):
-        self.artifact_labels_by_concept = {
-            "timestamp": self.art1_labels,
-            "box": self.art2_labels,
-            "brightness": self.art3_labels,
-        }
-        self.art1_ids = np.where(self.art1_labels)[0]
-        self.art2_ids = np.where(self.art2_labels)[0]
-        self.art3_ids = np.where(self.art3_labels)[0]
         self.sample_ids_by_artifact = {
             concept: np.where(labels)[0]
             for concept, labels in self.artifact_labels_by_concept.items()
@@ -160,12 +192,77 @@ class CelebAAttackedDataset(CelebASubset):
             i for i in range(len(self)) if i not in artifact_id_set
         ]
 
-    def add_artifact(self, img, idx, artifact_type, **artifact_kwargs):
-        random.seed(idx)
-        torch.manual_seed(idx)
-        np.random.seed(idx)
+    def add_artifact(
+        self,
+        img,
+        idx,
+        artifact_type,
+        concept=None,
+        occupied_mask=None,
+        **artifact_kwargs,
+    ):
+        if concept is None:
+            concept = next(
+                (
+                    name
+                    for name, (candidate_type, _) in self.artifact_specs.items()
+                    if candidate_type == artifact_type
+                ),
+                artifact_type,
+            )
+        concept_offset = ARTIFACT_CONCEPT_POOL.index(concept) + 1
+        insertion_seed = (
+            self.artifact_seed * 1_000_003 + int(idx) * 101 + concept_offset * 10_007
+        ) % (2**32)
 
-        return insert_artifact(img, artifact_type, **artifact_kwargs)
+        python_state = random.getstate()
+        numpy_state = np.random.get_state()
+        torch_state = torch.random.get_rng_state()
+        try:
+            random.seed(insertion_seed)
+            np.random.seed(insertion_seed)
+            torch.manual_seed(insertion_seed)
+            if occupied_mask is not None:
+                artifact_kwargs["occupied_mask"] = occupied_mask
+            return insert_artifact(img, artifact_type, **artifact_kwargs)
+        finally:
+            random.setstate(python_state)
+            np.random.set_state(numpy_state)
+            torch.random.set_rng_state(torch_state)
+
+    def render_artifacts(self, image, idx):
+        masks = {
+            concept: torch.zeros((self.image_size, self.image_size)).float()
+            for concept in self.artifact_concepts
+        }
+
+        # Global transformations must happen before localized overlays.
+        if (
+            "brightness" in self.artifact_concepts
+            and self.artifact_labels_by_concept["brightness"][idx]
+        ):
+            artifact_type, kwargs = self.artifact_specs["brightness"]
+            image, mask = self.add_artifact(
+                image, idx, artifact_type, concept="brightness", **kwargs
+            )
+            masks["brightness"] = mask.float()
+
+        occupied_mask = torch.zeros((self.image_size, self.image_size)).bool()
+        for concept in self.artifact_concepts:
+            if concept == "brightness" or not self.artifact_labels_by_concept[concept][idx]:
+                continue
+            artifact_type, kwargs = self.artifact_specs[concept]
+            image, mask = self.add_artifact(
+                image,
+                idx,
+                artifact_type,
+                concept=concept,
+                occupied_mask=occupied_mask,
+                **kwargs,
+            )
+            masks[concept] = mask.float()
+            occupied_mask |= mask.bool()
+        return image, masks
 
     def __getitem__(self, idx):
         img_name = f"{self.path}/img_align_celeba/{self.metadata.iloc[idx]['image_id']}"
@@ -173,10 +270,7 @@ class CelebAAttackedDataset(CelebASubset):
         image = self.transform_resize(image)
         target = torch.tensor(self.metadata.iloc[idx]["targets"])
 
-        for concept in self.artifact_concepts:
-            if self.artifact_labels_by_concept[concept][idx]:
-                artifact_type, kwargs = self.artifact_specs[concept]
-                image, _ = self.add_artifact(image, idx, artifact_type, **kwargs)
+        image, _ = self.render_artifacts(image, idx)
 
         if self.transform:
             image = self.transform(image)
@@ -189,20 +283,25 @@ class CelebAAttackedDataset(CelebASubset):
     # Overrides
     def get_subset_by_idxs(self, idxs):
         subset = super().get_subset_by_idxs(idxs)
-        subset.art1_labels = self.art1_labels[np.array(idxs)]
-        subset.art2_labels = self.art2_labels[np.array(idxs)]
-        subset.art3_labels = self.art3_labels[np.array(idxs)]
-
+        subset.attributes = self.attributes.iloc[idxs].reset_index(drop=True)
+        subset.sample_ids_by_concept = {
+            concept: np.where(subset.attributes[concept].to_numpy() == 1)[0]
+            for concept in subset.attributes.columns
+        }
+        subset.artifact_labels_by_concept = {
+            concept: labels[np.array(idxs)]
+            for concept, labels in self.artifact_labels_by_concept.items()
+        }
         subset._refresh_artifact_indices()
         return subset
 
     def get_labels(self):
-        base_labels = super().get_labels()  # shape [N, 40]
+        base_labels = super().get_labels()
         attack_cols = torch.tensor(
             self.metadata[self.artifact_concepts].to_numpy(),
             dtype=base_labels.dtype,
         )
-        return torch.cat([base_labels, attack_cols], dim=1)  # shape [N, 43]
+        return torch.cat([base_labels, attack_cols], dim=1)
 
     def get_concept_names(self):
         concept_names = super().get_concept_names()

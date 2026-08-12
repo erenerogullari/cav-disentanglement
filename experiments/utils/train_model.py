@@ -69,10 +69,14 @@ def _instantiate_dataset(cfg: DictConfig) -> Tuple[BaseDataset, bool]:
     return dataset, shuffle
 
 
-def _prepare_targets(targets, device: torch.device) -> torch.Tensor:
+def _prepare_targets(
+    targets, device: torch.device, single_label: bool = False
+) -> torch.Tensor:
     if not torch.is_tensor(targets):
         targets = torch.tensor(targets)
     targets = targets.to(device)
+    if single_label:
+        return targets.reshape(-1).long()
     if targets.ndim == 0:
         targets = targets.unsqueeze(0)
     if targets.ndim == 1:
@@ -102,9 +106,31 @@ def _multilabel_stats(outputs: torch.Tensor, targets: torch.Tensor, threshold: f
     }
 
 
+def _single_label_stats(
+    outputs: torch.Tensor, targets: torch.Tensor, per_class: bool = False
+):
+    preds = outputs.detach().cpu().argmax(dim=1)
+    true = targets.detach().cpu().long()
+    labels = np.arange(outputs.shape[1])
+    average = None if per_class else "macro"
+    return {
+        "accuracy": float(accuracy_score(true, preds)),
+        "precision": precision_score(
+            true, preds, labels=labels, average=average, zero_division=0
+        ),
+        "recall": recall_score(
+            true, preds, labels=labels, average=average, zero_division=0
+        ),
+        "f1": f1_score(
+            true, preds, labels=labels, average=average, zero_division=0
+        ),
+    }
+
+
 def _precision_recall_analysis(
     logits: torch.Tensor,   # shape (N, C), raw model outputs
     targets: torch.Tensor,  # shape (N, C), {0,1}
+    single_label: bool = False,
 ) -> Dict[str, object]:
     """
     Returns per-class precision/recall curves.
@@ -112,7 +138,12 @@ def _precision_recall_analysis(
     if logits.ndim != 2 or targets.ndim != 2:
         raise ValueError("Expected logits and targets to be 2D tensors of shape (N, C).")
 
-    probs = torch.sigmoid(logits).detach().cpu().numpy()
+    probability_fn = torch.softmax if single_label else torch.sigmoid
+    probs = (
+        probability_fn(logits, dim=1)
+        if single_label
+        else probability_fn(logits)
+    ).detach().cpu().numpy()
     true = targets.detach().cpu().numpy()
     num_classes = probs.shape[1]
 
@@ -179,6 +210,7 @@ def _train_epoch(
     criterion,
     optimizer,
     device: torch.device,
+    single_label: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     model.train()
     total_loss = 0.0
@@ -191,7 +223,7 @@ def _train_epoch(
     train_stats = {}
     for inputs, targets in dataloader:
         inputs = inputs.to(device)
-        targets = _prepare_targets(targets, device)
+        targets = _prepare_targets(targets, device, single_label=single_label)
 
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -201,7 +233,11 @@ def _train_epoch(
 
         batch_size = inputs.size(0)
         total_loss += loss.item() * batch_size
-        batch_stats = _multilabel_stats(outputs.detach(), targets, per_class=False)
+        batch_stats = (
+            _single_label_stats(outputs, targets, per_class=False)
+            if single_label
+            else _multilabel_stats(outputs.detach(), targets, per_class=False)
+        )
         total_acc += batch_stats["accuracy"] * batch_size
         total_f1 += batch_stats["f1"] * batch_size
         total_prec += batch_stats["precision"] * batch_size
@@ -221,6 +257,7 @@ def _evaluate(
     dataloader: Optional[DataLoader],
     criterion,
     device: torch.device,
+    single_label: bool = False,
 ) -> Tuple[float, Dict[str, float], torch.Tensor, torch.Tensor]:
     if dataloader is None or len(dataloader) == 0:
         raise ValueError("Dataloader for evaluation is None or empty.")
@@ -234,7 +271,7 @@ def _evaluate(
     with torch.no_grad():
         for inputs, targets in dataloader:
             inputs = inputs.to(device)
-            targets = _prepare_targets(targets, device)
+            targets = _prepare_targets(targets, device, single_label=single_label)
             outputs = model(inputs)
             loss = criterion(outputs, targets)
             batch_size = inputs.size(0)
@@ -246,12 +283,37 @@ def _evaluate(
     avg_loss = total_loss / total_samples
     logits = torch.cat(all_outputs, dim=0)
     targets_tensor = torch.cat(all_targets, dim=0)
-    stats = _multilabel_stats(logits, targets_tensor, per_class=False)
+    stats = (
+        _single_label_stats(logits, targets_tensor, per_class=False)
+        if single_label
+        else _multilabel_stats(logits, targets_tensor, per_class=False)
+    )
     return avg_loss, stats, logits, targets_tensor
 
 
 def _build_loaders(dataset: BaseDataset, shuffle: bool, cfg_train: DictConfig, seed: int):
     train_ids, val_ids, test_ids = dataset.do_train_val_test_split(cfg_train.val_split, cfg_train.test_split, seed=seed)
+    max_samples_per_split = cfg_train.get("max_samples_per_split", None)
+    if max_samples_per_split is not None:
+        max_samples_per_split = int(max_samples_per_split)
+        if max_samples_per_split <= 0:
+            raise ValueError("train.max_samples_per_split must be positive.")
+
+        rng = np.random.default_rng(seed)
+
+        def _cap(ids):
+            ids = np.asarray(ids)
+            if len(ids) <= max_samples_per_split:
+                return ids
+            return np.sort(
+                rng.choice(ids, size=max_samples_per_split, replace=False)
+            )
+
+        train_ids, val_ids, test_ids = map(_cap, (train_ids, val_ids, test_ids))
+        log.info(
+            "Limiting each classifier split to at most %d samples for this run.",
+            max_samples_per_split,
+        )
 
     train_dataset = dataset.get_subset_by_idxs(train_ids)
     train_dataset.do_augmentation = True
@@ -289,8 +351,13 @@ def _load_model(cfg_model: DictConfig, dataset_name: str, device: str, **overrid
     return model
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="train_model")
-def run(cfg: DictConfig) -> None:
+def train_classifier(
+    cfg: DictConfig,
+    checkpoint_path: Path | None = None,
+    checkpoint_metadata: Dict | None = None,
+    media_dir: Path | None = None,
+) -> Path:
+    """Train a classifier and persist its best validation checkpoint."""
     log.info("Starting training run: %s", cfg.experiment.name)
     seed = cfg.train.random_seed
     _set_seed(seed)
@@ -302,13 +369,15 @@ def run(cfg: DictConfig) -> None:
     dataset, shuffle = _instantiate_dataset(cfg.dataset)
     assert isinstance(dataset, BaseDataset)
     num_classes = dataset.get_num_classes()
-    class_names = dataset.get_class_names()
+    class_names = getattr(dataset, "class_names", None)
+    if class_names is None:
+        class_names = dataset.get_class_names()
     log.info("Detected %d classes.", num_classes)
     cfg.model.n_class = num_classes
 
     train_dataset, train_loader, val_loader, test_loader = _build_loaders(dataset, shuffle, cfg.train, seed=seed)
 
-    sample_tensor, _ = train_dataset[0]
+    sample_tensor, sample_target = train_dataset[0]
     if sample_tensor.ndim == 3:
         in_channels = int(sample_tensor.shape[0])
         height, width = sample_tensor.shape[-2], sample_tensor.shape[-1]
@@ -329,33 +398,61 @@ def run(cfg: DictConfig) -> None:
     )
     model = model.to(device)
 
-    pos_weight = None
-    labels = train_dataset.get_class_labels()
-    positives = labels.sum(dim=0)
-    total = torch.tensor(labels.shape[0], dtype=positives.dtype, device=positives.device)
-    negatives = total - positives
-    with torch.no_grad():
-        pos_weight = torch.where(positives > 0, negatives / (positives + 1e-8), torch.zeros_like(positives))
-    if pos_weight.numel() > 0:
-        pos_weight = pos_weight.to(device)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    single_label = torch.as_tensor(sample_target).ndim == 0
+    if single_label:
+        weights = getattr(train_dataset, "weights", None)
+        criterion = nn.CrossEntropyLoss(
+            weight=weights.to(device) if isinstance(weights, torch.Tensor) else None
+        )
     else:
-        criterion = nn.BCEWithLogitsLoss()
+        if hasattr(train_dataset, "get_class_labels"):
+            labels = train_dataset.get_class_labels()  # type: ignore[attr-defined]
+        else:
+            labels = torch.stack(
+                [train_dataset.get_target(i) for i in range(len(train_dataset))]
+            )
+            if labels.ndim == 1:
+                labels = labels.unsqueeze(1)
+        positives = labels.sum(dim=0)
+        total = torch.tensor(
+            labels.shape[0], dtype=positives.dtype, device=positives.device
+        )
+        negatives = total - positives
+        with torch.no_grad():
+            pos_weight = torch.where(
+                positives > 0,
+                negatives / (positives + 1e-8),
+                torch.zeros_like(positives),
+            )
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
 
     optimizer = optim.Adam(model.parameters(), lr=cfg.train.learning_rate)
 
     best_state = None
-    best_metric = 0
+    best_metric = float("-inf")
     best_epoch = 0
 
     log_every = max(1, cfg.train.log_interval)
 
     log.info("Starting training for %s epochs...", cfg.train.num_epochs)
     for epoch in range(1, cfg.train.num_epochs + 1):
-        train_loss, train_stats = _train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_stats = _train_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            single_label=single_label,
+        )
 
         if val_loader is not None:
-            val_loss, val_stats, _, _ = _evaluate(model, val_loader, criterion, device)
+            val_loss, val_stats, _, _ = _evaluate(
+                model,
+                val_loader,
+                criterion,
+                device,
+                single_label=single_label,
+            )
             if cfg.train.save_best and val_stats["accuracy"] > best_metric:
                 best_metric = val_stats["accuracy"]
                 best_state = copy.deepcopy(model.state_dict())
@@ -397,7 +494,13 @@ def run(cfg: DictConfig) -> None:
         log.info("Loading best model from epoch %d with val_acc=%.4f", best_epoch, best_metric)
         model.load_state_dict(best_state)
 
-    test_loss, test_stats, test_logits, test_targets = _evaluate(model, test_loader, criterion, device)
+    test_loss, test_stats, test_logits, test_targets = _evaluate(
+        model,
+        test_loader,
+        criterion,
+        device,
+        single_label=single_label,
+    )
     log.info(
         "Test stats | loss=%.4f acc=%.4f f1=%.4f precision=%.4f recall=%.4f",
         test_loss,
@@ -407,10 +510,23 @@ def run(cfg: DictConfig) -> None:
         test_stats["recall"],
     )
 
-    pr_curves = _precision_recall_analysis(test_logits, test_targets)
-    test_stats = _multilabel_stats(test_logits, test_targets, per_class=True)
+    pr_targets = (
+        torch.nn.functional.one_hot(
+            test_targets.long(), num_classes=test_logits.shape[1]
+        ).float()
+        if single_label
+        else test_targets
+    )
+    pr_curves = _precision_recall_analysis(
+        test_logits, pr_targets, single_label=single_label
+    )
+    test_stats = (
+        _single_label_stats(test_logits, test_targets, per_class=True)
+        if single_label
+        else _multilabel_stats(test_logits, test_targets, per_class=True)
+    )
 
-    media_dir = Path(get_original_cwd()) / "media"
+    media_dir = media_dir or Path(get_original_cwd()) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     plt.switch_backend("Agg")
     pr_plot_path = _plot_precision_recall_curves(pr_curves, media_dir, cfg.model.name, cfg.dataset.name)
@@ -425,9 +541,22 @@ def run(cfg: DictConfig) -> None:
     )
     log.info("Saved per-class precision/recall scatter plot to %s", pr_scatter_path)
 
-    checkpoint_path = _resolve_checkpoint_path(cfg.model, cfg.dataset.name)
-    torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
+    checkpoint_path = checkpoint_path or _resolve_checkpoint_path(
+        cfg.model, cfg.dataset.name
+    )
+    checkpoint_path = Path(checkpoint_path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint = {"model_state_dict": model.state_dict()}
+    if checkpoint_metadata:
+        checkpoint.update(checkpoint_metadata)
+    torch.save(checkpoint, checkpoint_path)
     log.info("Saved checkpoint to %s", checkpoint_path)
+    return checkpoint_path
+
+
+@hydra.main(version_base=None, config_path="../../configs", config_name="train_model")
+def run(cfg: DictConfig) -> None:
+    train_classifier(cfg)
 
 if __name__ == "__main__":
     run()

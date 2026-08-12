@@ -1,0 +1,84 @@
+experiment:
+  name: multi_concept_alignment
+  variant_id: pending
+  out: results/${experiment.name}/${experiment.variant_id}/${model.name}/${cav.layer}/${cav.name}
+
+dataset:
+  _target_: datasets.get_celeba_attacked_dataset
+  name: celeba_attacked
+  data_paths: ["${oc.env:CELEBA_DATA_ROOT}"]
+  normalize_data: true
+  shuffle: true
+  image_size: 224
+  attacked_classes: [1]
+  artifact_type: ch_time
+  time_format: datetime
+  p_artifact: 0.4
+  num_concepts: 1
+  cooccurrence_probability: 0.5
+  entanglement_factor: 5
+  artifact_seed: 0
+  brightness_factor: 1.4
+  val_split: 0.1
+  test_split: 0.1
+  seed: 42
+  cache_namespace: pending
+
+model:
+  name: vgg16
+  n_class: 2
+  pretrained: false
+  clean_ckpt_path: ${oc.env:CLEAN_VGG16_CHECKPOINT,checkpoints/checkpoint_vgg16_celeba.pth}
+  ckpt_path: null
+
+classifier_train:
+  device: ${oc.env:EXPERIMENT_DEVICE,cuda}
+  num_workers: 4
+  batch_size: 16
+  num_epochs: 20
+  learning_rate: 1.0e-4
+  val_split: 0.1
+  test_split: 0.1
+  random_seed: 42
+  log_interval: 1
+  save_best: true
+
+train:
+  device: ${classifier_train.device}
+  num_workers: ${classifier_train.num_workers}
+  batch_size: ${classifier_train.batch_size}
+  learning_rate: 1.0e-4
+  num_epochs: 50
+  val_ratio: 0.1
+  test_ratio: 0.1
+  random_seed: 42
+
+cav:
+  _target_: cav_models.PatternCAV
+  name: pattern_cav
+  cav_mode: max
+  layer: features.29
+  alpha: 0.01
+  beta: null
+  target_concepts: []
+  optimal_init: true
+  exit_criterion: null
+
+alignment:
+  split: test
+  artifact_concepts: []
+  max_samples: null
+  batch_size: ${train.batch_size}
+  save_raw_scores: true
+
+localization:
+  exclude_concepts: [brightness]
+  max_samples_per_concept: 128
+  seed: 42
+  qualitative_samples: 8
+  concept_cleaning:
+    enabled: false
+
+hydra:
+  job:
+    chdir: false

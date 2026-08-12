@@ -2,6 +2,7 @@ import logging
 import math
 import pickle
 import random
+import json
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,18 @@ from models import get_canonizer, requires_lxt_localization
 log = logging.getLogger(__name__)
 
 MODEL_ORDER = ["Baseline", "Orthogonal"]
+ALIGNMENT_PER_SAMPLE_COLUMNS = [
+    "variant_id",
+    "num_concepts",
+    "concept_set",
+    "cav_method",
+    "alpha",
+    "concept",
+    "model",
+    "cav_variant",
+    "sample_id",
+    "cosine",
+]
 
 try:
     import seaborn as sns
@@ -128,6 +141,7 @@ class PairedArtifactDataset(Dataset):
         self,
         dataset: Any,
         sample_ids: np.ndarray,
+        concept_name: str,
         artifact_type: str,
         artifact_kwargs: dict[str, Any],
     ) -> None:
@@ -145,6 +159,7 @@ class PairedArtifactDataset(Dataset):
             )
         self.dataset = dataset
         self.sample_ids = np.array(sample_ids)
+        self.concept_name = concept_name
         self.artifact_type = artifact_type
         self.artifact_kwargs = artifact_kwargs
 
@@ -169,7 +184,11 @@ class PairedArtifactDataset(Dataset):
         clean_img = self._load_base_image(idx)
         attacked_img = clean_img.copy()
         attacked_img, _ = self.dataset.add_artifact(
-            attacked_img, idx, self.artifact_type, **self.artifact_kwargs
+            attacked_img,
+            idx,
+            self.artifact_type,
+            concept=self.concept_name,
+            **self.artifact_kwargs,
         )
 
         clean_tensor = self._to_tensor(clean_img)
@@ -195,7 +214,9 @@ def _compute_deltas(
             f"Available: {list(spec_map.keys())}"
         )
     artifact_type, artifact_kwargs = spec_map[concept_name]
-    ds_pairs = PairedArtifactDataset(dataset, sample_ids, artifact_type, artifact_kwargs)
+    ds_pairs = PairedArtifactDataset(
+        dataset, sample_ids, concept_name, artifact_type, artifact_kwargs
+    )
     dataloader = DataLoader(
         ds_pairs,
         batch_size=cfg.alignment.batch_size,
@@ -350,12 +371,16 @@ def _plot_alignment_distribution(df_scores: pd.DataFrame, save_dir: Path) -> Non
 
 
 def evaluate_concept_alignment(
-    cfg: DictConfig, cav_model: nn.Module, base_cav_model: nn.Module
-) -> None:
+    cfg: DictConfig,
+    cav_model: nn.Module,
+    base_cav_model: nn.Module,
+    *,
+    output_dir: Path | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     from experiments.model_correction.utils import load_base_model
 
     save_dir = get_save_dir(cfg)
-    results_dir = save_dir / "results"
+    results_dir = output_dir or save_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     seed = int(cfg.train.random_seed)
@@ -389,6 +414,16 @@ def evaluate_concept_alignment(
     metrics_payload: dict[str, dict[str, dict[str, float]]] = {}
     per_sample_payload: dict[str, dict[str, np.ndarray]] = {}
     per_sample_rows = []
+    multi_concept_output = output_dir is not None
+    run_metadata = {}
+    if multi_concept_output:
+        run_metadata = {
+            "num_concepts": len(artifact_concepts),
+            "concept_set": json.dumps(artifact_concepts),
+            "cav_method": str(cfg.cav.name),
+            "alpha": float(cfg.cav.alpha),
+            "variant_id": str(cfg.experiment.variant_id),
+        }
 
     log.info(
         "Evaluating concept alignment on split=%s with %d samples.",
@@ -447,6 +482,7 @@ def evaluate_concept_alignment(
             )
 
             row = {
+                **run_metadata,
                 "concept": concept,
                 "model": model_name,
                 "n": n,
@@ -455,15 +491,25 @@ def evaluate_concept_alignment(
                 "cosine_sem": cosine_sem,
                 "cosine_mean_delta": cosine_mean_delta,
             }
+            if multi_concept_output:
+                row["cav_variant"] = model_name
             summary_rows.append(row)
             metrics_payload[concept][model_name] = row.copy()
 
             if cfg.alignment.save_raw_scores:
                 per_sample_payload[concept][model_name] = cos_np
-                for v in cos_np:
-                    per_sample_rows.append(
-                        {"concept": concept, "model": model_name, "cosine": float(v)}
-                    )
+                for sample_id, v in zip(sample_ids, cos_np):
+                    sample_row = {
+                        **run_metadata,
+                        "concept": concept,
+                        "model": model_name,
+                        "cosine": float(v),
+                    }
+                    if multi_concept_output:
+                        sample_row.update(
+                            {"cav_variant": model_name, "sample_id": int(sample_id)}
+                        )
+                    per_sample_rows.append(sample_row)
 
     df_summary = pd.DataFrame(summary_rows)
     df_summary.to_csv(results_dir / "alignment_summary.csv", index=False)
@@ -474,7 +520,17 @@ def evaluate_concept_alignment(
     with open(results_dir / "alignment_per_sample.pkl", "wb") as f:
         pickle.dump(per_sample_payload, f)
 
+    columns = (
+        ALIGNMENT_PER_SAMPLE_COLUMNS
+        if multi_concept_output
+        else ["concept", "model", "cosine"]
+    )
+    df_per_sample = pd.DataFrame(per_sample_rows, columns=columns)
+    if output_dir is not None:
+        df_per_sample.to_csv(results_dir / "alignment_per_sample.csv", index=False)
+
     _plot_alignment_summary(df_summary, results_dir)
-    _plot_alignment_distribution(pd.DataFrame(per_sample_rows), results_dir)
+    _plot_alignment_distribution(df_per_sample, results_dir)
 
     log.info("Saved concept alignment outputs to %s", results_dir)
+    return df_summary, df_per_sample

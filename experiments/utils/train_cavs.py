@@ -24,6 +24,7 @@ from utils.metrics import (
 from utils.sim_matrix import reorder_similarity_matrix
 from experiments.utils.utils import (
     get_save_dir,
+    get_dataset_cache_namespace,
     initialize_weights,
     save_results,
     save_plots,
@@ -32,7 +33,7 @@ from experiments.utils.cav_model_utils import (
     instantiate_cav_model,
     validate_precomputed_g_sae_cache,
 )
-from experiments.utils.activations import extract_latents
+from experiments.utils.activations import extract_latents, limit_preprocessing_dataset
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
@@ -104,7 +105,11 @@ def train_test_split(cfg, dataset, x_latent, labels):
         test_split=cfg.train.test_ratio,
         seed=cfg.train.random_seed,
     )
-    full_cav_experiments = ["concept_alignment", "model_correction"]
+    full_cav_experiments = [
+        "concept_alignment",
+        "multi_concept_alignment",
+        "model_correction",
+    ]
     train_data = (
         x_latent
         if cfg.experiment.name in full_cav_experiments
@@ -284,6 +289,7 @@ def train_cavs(
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
     dataset = instantiate(cfg.dataset)
+    dataset = limit_preprocessing_dataset(cfg, dataset)
     concept_names = dataset.get_concept_names()
 
     if encodings is not None and labels is not None:
@@ -314,7 +320,7 @@ def train_cavs(
     # Initialize CAV model and weights (alpha)
     log.info(f"Initializing CAV model: {cfg.cav.name}")
     cav_cache_path = build_cav_cache_path(
-        dataset_name=cfg.dataset.name,
+        dataset_name=get_dataset_cache_namespace(cfg.dataset),
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,

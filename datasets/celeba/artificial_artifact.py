@@ -82,6 +82,10 @@ def insert_artifact(img, artifact_type, **kwargs):
         return insert_constant_box(img, **kwargs)
     elif artifact_type == "random_box":
         return insert_random_box(img, **kwargs)
+    elif artifact_type == "checkerboard":
+        return insert_checkerboard(img, **kwargs)
+    elif artifact_type == "watermark":
+        return insert_watermark(img, **kwargs)
     elif artifact_type == "random_mnist":
         return insert_random_mnist(img, **kwargs)
     elif artifact_type == "color_mnist":
@@ -164,15 +168,113 @@ def insert_constant_box(img, **kwargs):
     return Image.fromarray(img), mask
 
 
+def _sample_patch_position(shape, height, width, occupied_mask=None, max_attempts=64):
+    max_x = shape[0] - height - 1
+    max_y = shape[1] - width - 1
+    if max_x <= 1 or max_y <= 1:
+        raise ValueError(
+            f"Artifact of size {height}x{width} does not fit image shape {shape[:2]}."
+        )
+
+    occupied = None
+    if occupied_mask is not None:
+        occupied = torch.as_tensor(occupied_mask).bool()
+        if tuple(occupied.shape) != tuple(shape[:2]):
+            raise ValueError(
+                "occupied_mask must match the image shape, got "
+                f"{tuple(occupied.shape)} and {tuple(shape[:2])}."
+            )
+
+    for _ in range(max_attempts):
+        posx = int(np.random.randint(1, max_x))
+        posy = int(np.random.randint(1, max_y))
+        if occupied is None or not occupied[
+            posx : posx + height, posy : posy + width
+        ].any():
+            return posx, posy
+
+    raise RuntimeError(
+        f"Could not place {height}x{width} artifact without overlap after "
+        f"{max_attempts} deterministic attempts."
+    )
+
+
 def insert_random_box(img, **kwargs):
-    # size = 10 #
-    size = np.random.randint(15, 30)
+    size = int(np.random.randint(15, 30))
     img = np.array(img)
-    posx, posy = np.random.randint(1, img.shape[0] - (size + 1)), np.random.randint(1, img.shape[1] - (size + 1))
-    img[posx:posx + size, posy:posy + size, :] = 255 - np.random.rand() * .1 * 255
+    posx, posy = _sample_patch_position(
+        img.shape,
+        size,
+        size,
+        occupied_mask=kwargs.get("occupied_mask"),
+        max_attempts=kwargs.get("max_placement_attempts", 64),
+    )
+    img[posx : posx + size, posy : posy + size, :] = (
+        255 - np.random.rand() * 0.1 * 255
+    )
 
     mask = torch.zeros(img.shape[:2])
-    mask[posx:posx + size, posy:posy + size] = 1
+    mask[posx : posx + size, posy : posy + size] = 1
+    return Image.fromarray(img), mask
+
+
+def insert_checkerboard(img, **kwargs):
+    size = int(np.random.randint(15, 30))
+    img = np.array(img)
+    posx, posy = _sample_patch_position(
+        img.shape,
+        size,
+        size,
+        occupied_mask=kwargs.get("occupied_mask"),
+        max_attempts=kwargs.get("max_placement_attempts", 64),
+    )
+    cell_size = max(2, size // 5)
+    rows, cols = np.indices((size, size))
+    checker = ((rows // cell_size + cols // cell_size) % 2 * 255).astype(np.uint8)
+    img[posx : posx + size, posy : posy + size, :] = checker[..., None]
+
+    mask = torch.zeros(img.shape[:2])
+    mask[posx : posx + size, posy : posy + size] = 1
+    return Image.fromarray(img), mask
+
+
+def _watermark_glyph(height=24, width=32):
+    glyph = np.zeros((height, width), dtype=bool)
+    stroke = 3
+
+    # Block-letter A in the left half.
+    for row in range(2, height - 2):
+        left = max(1, 7 - row // 3)
+        right = min(14, 8 + row // 3)
+        glyph[row, left : left + stroke] = True
+        glyph[row, right - stroke + 1 : right + 1] = True
+    glyph[11 : 11 + stroke, 3:15] = True
+
+    # Block-letter I in the right half.
+    glyph[2 : 2 + stroke, 18:30] = True
+    glyph[height - 2 - stroke : height - 2, 18:30] = True
+    glyph[2 : height - 2, 23 : 23 + stroke] = True
+    return glyph
+
+
+def insert_watermark(img, **kwargs):
+    glyph = _watermark_glyph()
+    height, width = glyph.shape
+    img = np.array(img)
+    posx, posy = _sample_patch_position(
+        img.shape,
+        height,
+        width,
+        occupied_mask=kwargs.get("occupied_mask"),
+        max_attempts=kwargs.get("max_placement_attempts", 64),
+    )
+    color = np.asarray(kwargs.get("color", (245, 245, 245)), dtype=np.uint8)
+    glyph_region = img[posx : posx + height, posy : posy + width, :]
+    glyph_region[glyph] = color
+
+    mask = torch.zeros(img.shape[:2])
+    mask_region = mask[posx : posx + height, posy : posy + width]
+    mask_region[torch.from_numpy(glyph)] = 1
     return Image.fromarray(img), mask
 
 

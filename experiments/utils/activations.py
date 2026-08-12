@@ -19,9 +19,61 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from pathlib import Path
 from hydra.utils import get_original_cwd
+from experiments.utils.utils import get_dataset_cache_namespace
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def limit_preprocessing_dataset(cfg: DictConfig, dataset):
+    """Optionally cap a real dataset for fast, opt-in smoke tests."""
+    max_samples = cfg.train.get("max_preprocessing_samples", None)
+    if max_samples is None:
+        return dataset
+    max_samples = int(max_samples)
+    if max_samples <= 0:
+        raise ValueError("train.max_preprocessing_samples must be positive.")
+    if len(dataset) <= max_samples:
+        return dataset
+
+    labels = dataset.get_labels().clamp(min=0)
+    rng = np.random.default_rng(int(cfg.train.random_seed))
+    selected: set[int] = set()
+    for concept_id in range(labels.shape[1]):
+        for value in (0, 1):
+            candidates = torch.where(labels[:, concept_id] == value)[0].numpy()
+            if len(candidates):
+                selected.add(int(rng.choice(candidates)))
+    if len(selected) > max_samples:
+        raise ValueError(
+            "train.max_preprocessing_samples is too small to cover positive and "
+            f"negative examples for every concept (need at least {len(selected)})."
+        )
+    remaining = np.setdiff1d(np.arange(len(dataset)), np.array(sorted(selected)))
+    num_remaining = max_samples - len(selected)
+    if num_remaining:
+        selected.update(
+            int(value)
+            for value in rng.choice(remaining, size=num_remaining, replace=False)
+        )
+
+    subset = dataset.get_subset_by_idxs(sorted(selected))
+    from datasets.base_dataset import BaseDataset
+
+    train_ids, val_ids, test_ids = BaseDataset.do_train_val_test_split(
+        subset,
+        val_split=cfg.train.val_ratio,
+        test_split=cfg.train.test_ratio,
+        seed=cfg.train.random_seed,
+    )
+    subset.idxs_train = train_ids
+    subset.idxs_val = val_ids
+    subset.idxs_test = test_ids
+    log.info(
+        "Limited preprocessing dataset to %d real samples for this smoke run.",
+        len(subset),
+    )
+    return subset
 
 
 def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
@@ -85,7 +137,7 @@ def extract_latents(
     cache_dir = (
         Path(get_original_cwd())
         / "variables"
-        / f"{cfg.dataset.name}"
+        / get_dataset_cache_namespace(cfg.dataset)
         / f"{cfg.model.name}"
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
