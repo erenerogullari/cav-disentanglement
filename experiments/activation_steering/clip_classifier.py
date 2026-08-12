@@ -6,13 +6,11 @@ import torch
 from PIL import Image
 
 
-PromptMap = Mapping[str, Mapping[str, Sequence[str]]]
+PromptMap = Mapping[str, Sequence[str]]
 
 
 class ZeroShotCLIPConceptScorer:
-    """Score binary visual concepts with paired CLIP text prompts."""
-
-    _CLASS_NAMES = ("negative", "positive")
+    """Score visual concepts by cosine similarity to positive text prompts."""
 
     def __init__(
         self,
@@ -65,24 +63,24 @@ class ZeroShotCLIPConceptScorer:
             raise ValueError("prompts must contain at least one concept")
 
         validated = {}
-        for concept, class_prompts in prompts.items():
-            missing = [name for name in cls._CLASS_NAMES if name not in class_prompts]
-            if missing:
+        for concept, concept_prompts in prompts.items():
+            if isinstance(concept_prompts, Mapping):
                 raise ValueError(
-                    f"Concept '{concept}' is missing prompt classes: {missing}"
+                    f"Concept '{concept}' must provide positive prompts directly, "
+                    "not a positive/negative prompt mapping"
                 )
-
-            validated[concept] = {}
-            for class_name in cls._CLASS_NAMES:
-                values = list(class_prompts[class_name])
-                if not values or not all(
-                    isinstance(value, str) and value for value in values
-                ):
-                    raise ValueError(
-                        f"Concept '{concept}' class '{class_name}' must contain "
-                        "at least one non-empty prompt"
-                    )
-                validated[concept][class_name] = tuple(values)
+            if isinstance(concept_prompts, str):
+                values = [concept_prompts]
+            else:
+                values = list(concept_prompts)
+            if not values or not all(
+                isinstance(value, str) and value.strip() for value in values
+            ):
+                raise ValueError(
+                    f"Concept '{concept}' must contain at least one non-empty "
+                    "positive prompt"
+                )
+            validated[concept] = tuple(values)
         return validated
 
     def _inference_context(self):
@@ -93,19 +91,13 @@ class ZeroShotCLIPConceptScorer:
     def _build_text_prototypes(self):
         prototypes = {}
         with torch.inference_mode(), self._inference_context():
-            for concept, class_prompts in self.prompts.items():
-                class_prototypes = []
-                for class_name in self._CLASS_NAMES:
-                    tokens = self.tokenizer(list(class_prompts[class_name])).to(
-                        self.device
-                    )
-                    features = self.model.encode_text(tokens)
-                    features = torch.nn.functional.normalize(features, dim=-1)
-                    prototype = torch.nn.functional.normalize(
-                        features.mean(dim=0), dim=0
-                    )
-                    class_prototypes.append(prototype)
-                prototypes[concept] = torch.stack(class_prototypes)
+            for concept, concept_prompts in self.prompts.items():
+                tokens = self.tokenizer(list(concept_prompts)).to(self.device)
+                features = self.model.encode_text(tokens)
+                features = torch.nn.functional.normalize(features, dim=-1)
+                prototypes[concept] = torch.nn.functional.normalize(
+                    features.mean(dim=0), dim=0
+                )
         return prototypes
 
     def _selected_concepts(self, concepts):
@@ -120,19 +112,13 @@ class ZeroShotCLIPConceptScorer:
             )
         return concepts
 
-    def _logit_scale(self):
-        logit_scale = getattr(self.model, "logit_scale", None)
-        if logit_scale is None:
-            return torch.tensor(100.0, device=self.device)
-        return logit_scale.exp()
-
     def score_paths(
         self,
         image_paths: Sequence[Path],
         batch_size: int = 8,
         concepts: Optional[Sequence[str]] = None,
     ):
-        """Return positive probabilities and cosine margins for each concept."""
+        """Return positive-prompt cosine similarities for each concept."""
         image_paths = [Path(path) for path in image_paths]
         if not image_paths:
             raise ValueError("No image paths provided for prediction.")
@@ -140,8 +126,7 @@ class ZeroShotCLIPConceptScorer:
             raise ValueError("batch_size must be positive")
 
         selected_concepts = self._selected_concepts(concepts)
-        probabilities = {concept: [] for concept in selected_concepts}
-        margins = {concept: [] for concept in selected_concepts}
+        similarities = {concept: [] for concept in selected_concepts}
 
         for start in range(0, len(image_paths), batch_size):
             batch_paths = image_paths[start : start + batch_size]
@@ -156,38 +141,31 @@ class ZeroShotCLIPConceptScorer:
                 image_features = torch.nn.functional.normalize(
                     image_features, dim=-1
                 )
-                logit_scale = self._logit_scale()
 
                 for concept in selected_concepts:
-                    similarities = image_features @ self.text_prototypes[concept].T
-                    concept_probabilities = (logit_scale * similarities).softmax(
-                        dim=-1
-                    )[:, 1]
-                    concept_margins = similarities[:, 1] - similarities[:, 0]
-                    probabilities[concept].append(
-                        concept_probabilities.detach().float().cpu()
+                    concept_similarity = image_features @ self.text_prototypes[concept]
+                    similarities[concept].append(
+                        concept_similarity.detach().float().cpu()
                     )
-                    margins[concept].append(concept_margins.detach().float().cpu())
 
         return {
-            "probabilities": {
-                concept: torch.cat(values)
-                for concept, values in probabilities.items()
+            "scores": {
+                concept: torch.cat(values) for concept, values in similarities.items()
             },
-            "margins": {
-                concept: torch.cat(values) for concept, values in margins.items()
+            "similarities": {
+                concept: torch.cat(values) for concept, values in similarities.items()
             },
         }
 
-    def predict_proba(
+    def predict_scores(
         self,
         image_paths: Sequence[Path],
         batch_size: int = 8,
         concepts: Optional[Sequence[str]] = None,
     ):
-        """Return positive-class probabilities in the input path order."""
+        """Return positive-prompt cosine similarities in input path order."""
         return self.score_paths(
             image_paths=image_paths,
             batch_size=batch_size,
             concepts=concepts,
-        )["probabilities"]
+        )["scores"]
