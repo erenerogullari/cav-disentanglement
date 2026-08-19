@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${CELEBA_DATA_ROOT:-}" ]]; then
-  echo "CELEBA_DATA_ROOT must point to the CelebA dataset root." >&2
-  exit 2
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-export CLEAN_VGG16_CHECKPOINT="${CLEAN_VGG16_CHECKPOINT:-${REPOSITORY_ROOT}/checkpoints/checkpoint_vgg16_celeba.pth}"
+export CELEBA_DATA_ROOT="/media/erogullari/datasets/"
+export CLEAN_VGG16_CHECKPOINT="/media/erogullari/checkpoints/checkpoint_vgg16_celeba.pth"
 
 CONCEPT_COUNTS=(1 2 3 4 5)
 ALPHAS=(0.01 0.1 1 10)

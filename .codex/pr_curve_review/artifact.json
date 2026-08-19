@@ -1,0 +1,1192 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "VGG precision–recall review for K=1–3",
+    "description": "Technical validation of K=1–3 CelebA VGG16 precision–recall behavior.",
+    "generatedAt": "2026-08-18T12:45:59+00:00",
+    "filters": [],
+    "cards": [],
+    "charts": [
+      {
+        "id": "ap_by_k_and_class",
+        "title": "Per-class average precision by K",
+        "subtitle": "Attacked-trained checkpoints on the same 2,115-sample test split; higher is better",
+        "showDescription": true,
+        "type": "bar",
+        "dataset": "per_class_ap",
+        "sourceId": "per_class_ap_metrics",
+        "encodings": {
+          "x": {
+            "field": "k_label",
+            "type": "ordinal",
+            "label": "Concept count"
+          },
+          "y": {
+            "field": "average_precision",
+            "type": "quantitative",
+            "format": "percent",
+            "label": "Average precision"
+          },
+          "color": {
+            "field": "class_name",
+            "type": "nominal",
+            "label": "Class"
+          },
+          "tooltip": [
+            {
+              "field": "average_precision",
+              "type": "quantitative",
+              "format": "percent",
+              "label": "Average precision"
+            },
+            {
+              "field": "prevalence",
+              "type": "quantitative",
+              "format": "percent",
+              "label": "Prevalence baseline"
+            },
+            {
+              "field": "n_class",
+              "type": "quantitative",
+              "format": "number",
+              "label": "Class samples"
+            }
+          ]
+        },
+        "xAxisTitle": "Nested concept set",
+        "yAxisTitle": "Average precision",
+        "valueFormat": "percent",
+        "layout": "full",
+        "maxRows": 6
+      },
+      {
+        "id": "validation_accuracy_history",
+        "title": "Validation accuracy over classifier training",
+        "subtitle": "Twenty epochs per K; persisted checkpoints were selected by peak validation accuracy",
+        "showDescription": true,
+        "type": "line",
+        "dataset": "training_history",
+        "sourceId": "classifier_training_history",
+        "encodings": {
+          "x": {
+            "field": "epoch",
+            "type": "quantitative",
+            "label": "Epoch"
+          },
+          "y": {
+            "field": "val_accuracy",
+            "type": "quantitative",
+            "format": "percent",
+            "label": "Validation accuracy"
+          },
+          "color": {
+            "field": "k_label",
+            "type": "nominal",
+            "label": "Concept count"
+          },
+          "tooltip": [
+            {
+              "field": "val_accuracy",
+              "type": "quantitative",
+              "format": "percent",
+              "label": "Validation accuracy"
+            },
+            {
+              "field": "val_f1",
+              "type": "quantitative",
+              "format": "percent",
+              "label": "Validation macro F1"
+            },
+            {
+              "field": "val_loss",
+              "type": "quantitative",
+              "format": "number",
+              "label": "Validation loss"
+            }
+          ]
+        },
+        "xAxisTitle": "Epoch",
+        "yAxisTitle": "Validation accuracy",
+        "valueFormat": "percent",
+        "layout": "full",
+        "maxRows": 60
+      }
+    ],
+    "tables": [
+      {
+        "id": "checkpoint_comparison",
+        "title": "Checkpoint test metrics",
+        "subtitle": "Exact metrics for the attacked-trained VGG16 checkpoints; deltas compare with their shared clean initialization",
+        "showDescription": true,
+        "dataset": "checkpoint_comparison",
+        "density": "spacious",
+        "sourceId": "recomputed_checkpoint_metrics",
+        "defaultSort": {
+          "field": "k",
+          "direction": "asc"
+        },
+        "columns": [
+          {
+            "field": "k",
+            "label": "K",
+            "type": "number",
+            "format": "number"
+          },
+          {
+            "field": "concepts",
+            "label": "Concepts",
+            "type": "text"
+          },
+          {
+            "field": "accuracy",
+            "label": "Accuracy",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "accuracy_delta_pp",
+            "label": "Accuracy Δ vs clean",
+            "type": "number",
+            "format": "number",
+            "unit": "pp",
+            "movement": true
+          },
+          {
+            "field": "macro_ap",
+            "label": "Macro AP",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "macro_ap_delta_pp",
+            "label": "Macro AP Δ vs clean",
+            "type": "number",
+            "format": "number",
+            "unit": "pp",
+            "movement": true
+          },
+          {
+            "field": "blond_ap",
+            "label": "Blond AP",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "blond_precision",
+            "label": "Blond precision",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "blond_recall",
+            "label": "Blond recall",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "blond_f1",
+            "label": "Blond F1",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "best_epoch",
+            "label": "Best epoch",
+            "type": "number",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "timestamp_subgroups",
+        "title": "Blond-Hair recall by timestamp presence",
+        "subtitle": "Observational subgroup comparison; timestamp-positive and timestamp-negative cohorts have very different class prevalence",
+        "showDescription": true,
+        "dataset": "timestamp_subgroups",
+        "density": "spacious",
+        "sourceId": "timestamp_subgroup_metrics",
+        "defaultSort": {
+          "field": "k",
+          "direction": "asc"
+        },
+        "columns": [
+          {
+            "field": "k",
+            "label": "K",
+            "type": "number",
+            "format": "number"
+          },
+          {
+            "field": "timestamp_present_n",
+            "label": "Timestamp-present n",
+            "type": "number",
+            "format": "number"
+          },
+          {
+            "field": "timestamp_present_positive_rate",
+            "label": "Timestamp-present Blond rate",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "trained_recall_timestamp_present",
+            "label": "Trained recall: timestamp present",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "trained_recall_timestamp_absent",
+            "label": "Trained recall: timestamp absent",
+            "type": "percent",
+            "format": "percent"
+          },
+          {
+            "field": "clean_recall_timestamp_absent",
+            "label": "Clean recall: timestamp absent",
+            "type": "percent",
+            "format": "percent"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "recomputed_checkpoint_metrics",
+        "label": "Recomputed K=1–3 checkpoint test metrics",
+        "query": {
+          "engine": "SQLite",
+          "language": "SQL",
+          "executed_at": "2026-08-18T12:45:59+00:00",
+          "sql": "WITH reviewed_metrics(k, concepts, n_test, accuracy, accuracy_delta_pp, macro_ap, macro_ap_delta_pp, blond_ap, blond_precision, blond_recall, blond_f1, best_epoch, best_val_accuracy) AS (\n  VALUES\n    (1, 'timestamp', 2115, 0.9408983451536643, 0.3309692671394804, 0.9536699319331221, -0.33245658984562, 0.9169731817044379, 0.8465346534653465, 0.8444444444444444, 0.8454882571075402, 16, 0.9362),\n    (2, 'timestamp + box', 2115, 0.9432624113475178, 0.6146572104018921, 0.953908276422628, -0.26091641724098613, 0.9161239645925898, 0.8625954198473282, 0.837037037037037, 0.849624060150376, 4, 0.94),\n    (3, 'timestamp + box + brightness', 2115, 0.939952718676123, 0.28368794326241176, 0.9573704792762241, 0.15290303977466557, 0.9224828489550105, 0.8475, 0.837037037037037, 0.8422360248447205, 8, 0.9395)\n)\nSELECT k, concepts, n_test, accuracy, accuracy_delta_pp, macro_ap, macro_ap_delta_pp, blond_ap, blond_precision, blond_recall, blond_f1, best_epoch, best_val_accuracy\nFROM reviewed_metrics\nORDER BY k;",
+          "description": "Selects the reviewed checkpoint comparison rows produced by deterministic test inference.",
+          "tables_used": [
+            "reviewed_metrics"
+          ],
+          "filters": [
+            "Deterministic CelebA test split, seed 42",
+            "K in 1, 2, 3",
+            "2,115 test samples per K",
+            "Argmax operating point for precision, recall, F1, and accuracy"
+          ],
+          "metric_definitions": [
+            "Average precision is sklearn average_precision_score over the class softmax probability and one-vs-rest class target.",
+            "Macro AP is the unweighted mean of Non-Blond Hair AP and Blond Hair AP.",
+            "Accuracy delta is trained attacked-checkpoint accuracy minus clean-initialization accuracy on the same attacked test cohort, in percentage points."
+          ]
+        }
+      },
+      {
+        "id": "per_class_ap_metrics",
+        "label": "Per-class average precision and prevalence",
+        "query": {
+          "engine": "SQLite",
+          "language": "SQL",
+          "executed_at": "2026-08-18T12:45:59+00:00",
+          "sql": "WITH reviewed_metrics(k_label, k, class_name, average_precision, prevalence, n_class, n_test) AS (\n  VALUES\n    ('K=1', 1, 'Non-Blond Hair', 0.9903666821618062, 0.8085106382978723, 1710, 2115),\n    ('K=1', 1, 'Blond Hair', 0.9169731817044379, 0.19148936170212766, 405, 2115),\n    ('K=2', 2, 'Non-Blond Hair', 0.9916925882526662, 0.8085106382978723, 1710, 2115),\n    ('K=2', 2, 'Blond Hair', 0.9161239645925898, 0.19148936170212766, 405, 2115),\n    ('K=3', 3, 'Non-Blond Hair', 0.9922581095974377, 0.8085106382978723, 1710, 2115),\n    ('K=3', 3, 'Blond Hair', 0.9224828489550105, 0.19148936170212766, 405, 2115)\n)\nSELECT k_label, k, class_name, average_precision, prevalence, n_class, n_test\nFROM reviewed_metrics\nORDER BY k, class_name;",
+          "description": "Selects trained-checkpoint AP and class prevalence by K and one-vs-rest class.",
+          "tables_used": [
+            "reviewed_metrics"
+          ],
+          "filters": [
+            "Attacked-trained checkpoint only",
+            "Deterministic 2,115-sample test split"
+          ],
+          "metric_definitions": [
+            "Average precision summarizes the precision–recall ranking curve; the no-skill reference equals class prevalence."
+          ]
+        }
+      },
+      {
+        "id": "classifier_training_history",
+        "label": "K=1–3 classifier epoch histories",
+        "query": {
+          "engine": "SQLite",
+          "language": "SQL",
+          "executed_at": "2026-08-18T12:45:59+00:00",
+          "sql": "WITH reviewed_metrics(k_label, k, epoch, train_loss, train_accuracy, val_loss, val_accuracy, val_f1) AS (\n  VALUES\n    ('K=1', 1, 1, 0.3067, 0.878, 0.2867, 0.87, 0.8283),\n    ('K=1', 1, 2, 0.3184, 0.8653, 0.6733, 0.8889, 0.8348),\n    ('K=1', 1, 3, 0.2197, 0.9063, 0.2399, 0.9182, 0.8807),\n    ('K=1', 1, 4, 0.182, 0.9286, 0.3715, 0.9357, 0.9019),\n    ('K=1', 1, 5, 0.1891, 0.9249, 0.1938, 0.9102, 0.8745),\n    ('K=1', 1, 6, 0.1885, 0.9258, 0.3096, 0.9201, 0.8812),\n    ('K=1', 1, 7, 0.1796, 0.9349, 0.2084, 0.895, 0.8558),\n    ('K=1', 1, 8, 0.1703, 0.9307, 0.2913, 0.9357, 0.9016),\n    ('K=1', 1, 9, 0.184, 0.9281, 0.326, 0.9078, 0.8634),\n    ('K=1', 1, 10, 0.1518, 0.9371, 0.2739, 0.9296, 0.8939),\n    ('K=1', 1, 11, 0.148, 0.9374, 0.2949, 0.8884, 0.8393),\n    ('K=1', 1, 12, 0.1548, 0.9369, 0.2854, 0.9191, 0.8828),\n    ('K=1', 1, 13, 0.1699, 0.9339, 0.2523, 0.9182, 0.8809),\n    ('K=1', 1, 14, 0.1489, 0.9384, 0.2422, 0.9064, 0.8674),\n    ('K=1', 1, 15, 0.142, 0.9434, 0.5226, 0.9291, 0.889),\n    ('K=1', 1, 16, 0.1456, 0.9393, 0.326, 0.9362, 0.9),\n    ('K=1', 1, 17, 0.1412, 0.9453, 0.3502, 0.905, 0.8529),\n    ('K=1', 1, 18, 0.1288, 0.9479, 0.2619, 0.922, 0.8837),\n    ('K=1', 1, 19, 0.1517, 0.9406, 0.2449, 0.9182, 0.882),\n    ('K=1', 1, 20, 0.1325, 0.9435, 0.2846, 0.9291, 0.8945),\n    ('K=2', 2, 1, 0.3392, 0.8726, 0.2795, 0.8378, 0.7946),\n    ('K=2', 2, 2, 0.2804, 0.8765, 0.2413, 0.9234, 0.8884),\n    ('K=2', 2, 3, 0.1961, 0.9231, 0.2248, 0.9069, 0.8689),\n    ('K=2', 2, 4, 0.1733, 0.9278, 0.2519, 0.94, 0.9052),\n    ('K=2', 2, 5, 0.1799, 0.9288, 0.2255, 0.8771, 0.8351),\n    ('K=2', 2, 6, 0.1906, 0.9242, 0.2261, 0.9201, 0.8822),\n    ('K=2', 2, 7, 0.1687, 0.9284, 0.2279, 0.8804, 0.8396),\n    ('K=2', 2, 8, 0.1716, 0.9295, 0.2946, 0.9305, 0.8948),\n    ('K=2', 2, 9, 0.1677, 0.932, 0.2251, 0.9097, 0.8708),\n    ('K=2', 2, 10, 0.1619, 0.9354, 0.2504, 0.8695, 0.8278),\n    ('K=2', 2, 11, 0.1562, 0.9343, 0.214, 0.8922, 0.8527),\n    ('K=2', 2, 12, 0.1997, 0.9216, 0.4376, 0.8842, 0.8363),\n    ('K=2', 2, 13, 0.1736, 0.9233, 0.3296, 0.9135, 0.8732),\n    ('K=2', 2, 14, 0.164, 0.932, 0.2253, 0.9083, 0.8708),\n    ('K=2', 2, 15, 0.1406, 0.94, 0.3214, 0.9357, 0.9011),\n    ('K=2', 2, 16, 0.1521, 0.9391, 0.3082, 0.9329, 0.8966),\n    ('K=2', 2, 17, 0.1407, 0.9429, 0.4229, 0.9234, 0.8818),\n    ('K=2', 2, 18, 0.1866, 0.9258, 0.3347, 0.9277, 0.8921),\n    ('K=2', 2, 19, 0.1433, 0.9427, 0.25, 0.9191, 0.8817),\n    ('K=2', 2, 20, 0.1433, 0.9383, 0.403, 0.9277, 0.8896),\n    ('K=3', 3, 1, 0.3038, 0.8826, 0.2586, 0.9206, 0.8824),\n    ('K=3', 3, 2, 0.2455, 0.8991, 0.2559, 0.9158, 0.875),\n    ('K=3', 3, 3, 0.2341, 0.9031, 0.2803, 0.9168, 0.878),\n    ('K=3', 3, 4, 0.2319, 0.9106, 0.2488, 0.9352, 0.8992),\n    ('K=3', 3, 5, 0.1783, 0.9306, 0.1957, 0.9139, 0.8772),\n    ('K=3', 3, 6, 0.1755, 0.9321, 0.2262, 0.9329, 0.8983),\n    ('K=3', 3, 7, 0.1691, 0.9344, 0.2065, 0.8894, 0.8502),\n    ('K=3', 3, 8, 0.1672, 0.9339, 0.2728, 0.9395, 0.9039),\n    ('K=3', 3, 9, 0.1728, 0.932, 0.2855, 0.9139, 0.8709),\n    ('K=3', 3, 10, 0.1547, 0.941, 0.2445, 0.8936, 0.8534),\n    ('K=3', 3, 11, 0.1516, 0.9382, 0.2239, 0.8936, 0.853),\n    ('K=3', 3, 12, 0.1595, 0.9362, 0.3107, 0.9059, 0.8608),\n    ('K=3', 3, 13, 0.1547, 0.9374, 0.2225, 0.8993, 0.8589),\n    ('K=3', 3, 14, 0.1475, 0.9425, 0.2794, 0.9291, 0.8918),\n    ('K=3', 3, 15, 0.1947, 0.9369, 0.3333, 0.9234, 0.8818),\n    ('K=3', 3, 16, 0.1468, 0.9411, 0.468, 0.9286, 0.8879),\n    ('K=3', 3, 17, 0.1436, 0.9443, 0.7589, 0.9116, 0.8612),\n    ('K=3', 3, 18, 0.1399, 0.9423, 0.2982, 0.8827, 0.8392),\n    ('K=3', 3, 19, 0.1449, 0.9429, 0.31, 0.9187, 0.8816),\n    ('K=3', 3, 20, 0.16, 0.9345, 0.2745, 0.921, 0.8834)\n)\nSELECT k_label, k, epoch, train_loss, train_accuracy, val_loss, val_accuracy, val_f1\nFROM reviewed_metrics\nORDER BY k, epoch;",
+          "description": "Selects the 20 logged train/validation epochs for each K.",
+          "tables_used": [
+            "reviewed_metrics"
+          ],
+          "filters": [
+            "All 20 epochs for K=1, K=2, and K=3"
+          ],
+          "metric_definitions": [
+            "Validation accuracy is whole-split two-class accuracy at each epoch.",
+            "The persisted checkpoint is selected by maximum validation accuracy."
+          ]
+        }
+      },
+      {
+        "id": "timestamp_subgroup_metrics",
+        "label": "Timestamp-present and timestamp-absent subgroup metrics",
+        "query": {
+          "engine": "SQLite",
+          "language": "SQL",
+          "executed_at": "2026-08-18T12:45:59+00:00",
+          "sql": "WITH reviewed_metrics(k, timestamp_present_n, timestamp_present_positive_rate, trained_recall_timestamp_present, trained_recall_timestamp_absent, clean_recall_timestamp_absent) AS (\n  VALUES\n    (1, 169, 0.9171597633136095, 0.9548387096774194, 0.776, 0.908),\n    (2, 169, 0.9171597633136095, 0.9483870967741935, 0.768, 0.908),\n    (3, 169, 0.9171597633136095, 0.9548387096774194, 0.764, 0.908)\n)\nSELECT k, timestamp_present_n, timestamp_present_positive_rate, trained_recall_timestamp_present, trained_recall_timestamp_absent, clean_recall_timestamp_absent\nFROM reviewed_metrics\nORDER BY k;",
+          "description": "Selects observational test metrics split by timestamp presence.",
+          "tables_used": [
+            "reviewed_metrics"
+          ],
+          "filters": [
+            "Same deterministic test cohort as overall metrics",
+            "Timestamp presence generated with 0.4 probability for Blond Hair and 0.005 otherwise"
+          ],
+          "metric_definitions": [
+            "Blond recall is true Blond Hair predictions divided by all Blond Hair examples within the indicated timestamp subgroup."
+          ]
+        }
+      },
+      {
+        "id": "analysis_code",
+        "label": "Recomputation code",
+        "path": ".codex/pr_curve_review/analyze_pr.py"
+      },
+      {
+        "id": "training_log_parser",
+        "label": "Training-log parser",
+        "path": ".codex/pr_curve_review/parse_training_logs.py"
+      },
+      {
+        "id": "original_pr_plots",
+        "label": "Original checkpoint precision–recall PDFs",
+        "path": "checkpoints/celeba_attacked"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# VGG precision–recall review for K=1–3"
+      },
+      {
+        "id": "technical_summary",
+        "type": "markdown",
+        "sourceId": "recomputed_checkpoint_metrics",
+        "body": "## Technical summary\n\n**Overall assessment: the three checkpoints successfully optimize the Blond-Hair classification objective, and increasing K from 1 to 3 does not cause a visible precision–recall collapse.** Blond-Hair average precision is 91.7%, 91.6%, and 92.2% for K=1, K=2, and K=3, far above the 19.1% class-prevalence reference. Test accuracy stays between 94.0% and 94.3%.\n\n**The stronger claim that fine-tuning learned a substantially better classifier is not supported.** The shared clean initialization already reaches 93.7% test accuracy and roughly 95.6%–95.7% macro AP on the attacked cohorts. Fine-tuning adds only 0.28–0.61 percentage points of accuracy, while macro AP changes by −0.33, −0.26, and +0.15 points. The result is best described as retention and operating-point adjustment of an already learned objective, not learning from scratch."
+      },
+      {
+        "id": "pr_finding",
+        "type": "markdown",
+        "sourceId": "per_class_ap_metrics",
+        "body": "## Precision–recall quality is high and stable across K\n\nThe minority Blond-Hair class is the decisive curve: its AP remains above 91.6% for every checkpoint despite only 405 positive examples in the 2,115-sample test set. Non-Blond-Hair AP remains above 99.0%. K=3 is marginally highest on Blond-Hair AP, so the observed sequence is not a monotonic degradation with more entangled concepts. Differences below one percentage point should not be treated as meaningful without repeated seeds or paired uncertainty estimates."
+      },
+      {
+        "id": "ap_chart",
+        "type": "chart",
+        "chartId": "ap_by_k_and_class",
+        "layout": "full"
+      },
+      {
+        "id": "operating_point_finding",
+        "type": "markdown",
+        "sourceId": "recomputed_checkpoint_metrics",
+        "body": "## The default decision point is usable but more conservative after fine-tuning\n\nAt the default argmax decision point, Blond-Hair precision is 84.7%–86.3% and recall is 83.7%–84.4%. Compared with the clean initialization, fine-tuning generally raises minority-class precision while lowering recall. This explains why accuracy can improve slightly even when ranking quality, measured by AP, is flat or lower. K=2 has the best test accuracy (94.33%) and macro F1 (90.73%), but none of the three K settings is materially separated by the available single-run evidence."
+      },
+      {
+        "id": "metrics_table",
+        "type": "table",
+        "tableId": "checkpoint_comparison",
+        "layout": "full"
+      },
+      {
+        "id": "convergence_finding",
+        "type": "markdown",
+        "sourceId": "classifier_training_history",
+        "body": "## Optimization converged, with early best epochs for K=2 and K=3\n\nRelative to epoch 1, selected validation accuracy improved by 6.62 points for K=1, 10.22 points for K=2, and 1.89 points for K=3. The saved best epochs were 16, 4, and 8 respectively. Later epochs fluctuate rather than improve monotonically, so loading the peak-validation checkpoint was necessary. Because selection uses validation accuracy—not AP or minority-class F1—the saved operating point is expected to favor overall correctness on this imbalanced task."
+      },
+      {
+        "id": "training_chart",
+        "type": "chart",
+        "chartId": "validation_accuracy_history",
+        "layout": "full"
+      },
+      {
+        "id": "shortcut_finding",
+        "type": "markdown",
+        "sourceId": "timestamp_subgroup_metrics",
+        "body": "## Timestamp-absent recall is the main warning signal\n\nFor the trained checkpoints, Blond-Hair recall is 95.5% when timestamp is present but only 77.6%, 76.8%, and 76.4% when it is absent. The clean initialization reaches about 90.8% recall in the timestamp-absent subgroup. This is consistent with increased use of the correlated artifact, but it is not a causal shortcut estimate: timestamp presence changes class prevalence dramatically (91.7% Blond among timestamp-present samples), and these are not paired counterfactual cohorts."
+      },
+      {
+        "id": "subgroup_table",
+        "type": "table",
+        "tableId": "timestamp_subgroups",
+        "layout": "full"
+      },
+      {
+        "id": "scope_definitions",
+        "type": "markdown",
+        "body": "## Scope, data, and metric definitions\n\nAll K values use the same deterministic CelebA split (seed 42), 2,115 test examples, the same clean VGG16 initialization, 20 training epochs, and the same optimizer settings. Only the nested artifact set changes: timestamp; timestamp + box; timestamp + box + brightness.\n\nAverage precision summarizes the one-vs-rest precision–recall ranking using softmax probabilities. Its no-skill reference is the class prevalence: 19.1% for Blond Hair and 80.9% for Non-Blond Hair. Precision, recall, F1, and accuracy use the default argmax decision rule, equivalent to a 0.5 threshold in this two-class softmax model."
+      },
+      {
+        "id": "methodology",
+        "type": "markdown",
+        "sourceId": "analysis_code",
+        "body": "## Methodology and reproducibility\n\nEach saved checkpoint was signature-checked, reloaded in the existing project environment, and evaluated against its reconstructed deterministic attacked test dataset. The clean checkpoint was evaluated on each identical K-specific cohort as a baseline. Class-level AP, threshold metrics, confusion counts, and artifact subgroups were recomputed independently of the saved PDFs. Training histories and selected epochs were parsed from the corresponding Hydra classifier logs."
+      },
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "body": "## Limitations and visualization issues\n\nThe original PDFs omit class legends, AP values, and prevalence baselines; the scatter plots contain two unlabeled points. They are directionally correct but not self-interpreting. The checkpoints also save model weights and signatures, not raw test predictions or epoch histories, so uncertainty intervals are absent. Results come from one seed and cannot establish that sub-percentage-point K differences are reproducible. Finally, endpoint PR curves establish predictive quality, not whether the classifier causally relies on each artifact."
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## Recommended next steps\n\n1. Add class labels, AP values, and prevalence reference lines to the PR PDFs.\n2. Save raw test targets/probabilities and epoch histories beside every classifier checkpoint.\n3. Select or at least report checkpoints by Blond-Hair AP/F1 in addition to overall validation accuracy.\n4. Run paired counterfactual evaluation: score each test image clean and with one artifact toggled while holding identity fixed.\n5. Repeat K=1–3 with multiple classifier seeds and report paired bootstrap intervals before interpreting small differences."
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Further questions\n\nWould the same stability hold for K=4 and K=5, where checkerboard and watermark add localized cues? Does increased timestamp-absent error persist under paired artifact removal? And do classifier shortcut measures track the downstream CAV alignment and localization changes that motivate the sweep?"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-18T12:45:59+00:00",
+    "status": "ready",
+    "datasets": {
+      "checkpoint_comparison": [
+        {
+          "k": 1,
+          "concepts": "timestamp",
+          "n_test": 2115,
+          "accuracy": 0.9408983451536643,
+          "accuracy_delta_pp": 0.3309692671394804,
+          "macro_ap": 0.9536699319331221,
+          "macro_ap_delta_pp": -0.33245658984562,
+          "blond_ap": 0.9169731817044379,
+          "blond_precision": 0.8465346534653465,
+          "blond_recall": 0.8444444444444444,
+          "blond_f1": 0.8454882571075402,
+          "best_epoch": 16,
+          "best_val_accuracy": 0.9362
+        },
+        {
+          "k": 2,
+          "concepts": "timestamp + box",
+          "n_test": 2115,
+          "accuracy": 0.9432624113475178,
+          "accuracy_delta_pp": 0.6146572104018921,
+          "macro_ap": 0.953908276422628,
+          "macro_ap_delta_pp": -0.26091641724098613,
+          "blond_ap": 0.9161239645925898,
+          "blond_precision": 0.8625954198473282,
+          "blond_recall": 0.837037037037037,
+          "blond_f1": 0.849624060150376,
+          "best_epoch": 4,
+          "best_val_accuracy": 0.94
+        },
+        {
+          "k": 3,
+          "concepts": "timestamp + box + brightness",
+          "n_test": 2115,
+          "accuracy": 0.939952718676123,
+          "accuracy_delta_pp": 0.28368794326241176,
+          "macro_ap": 0.9573704792762241,
+          "macro_ap_delta_pp": 0.15290303977466557,
+          "blond_ap": 0.9224828489550105,
+          "blond_precision": 0.8475,
+          "blond_recall": 0.837037037037037,
+          "blond_f1": 0.8422360248447205,
+          "best_epoch": 8,
+          "best_val_accuracy": 0.9395
+        }
+      ],
+      "per_class_ap": [
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "class_name": "Non-Blond Hair",
+          "average_precision": 0.9903666821618062,
+          "prevalence": 0.8085106382978723,
+          "n_class": 1710,
+          "n_test": 2115
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "class_name": "Blond Hair",
+          "average_precision": 0.9169731817044379,
+          "prevalence": 0.19148936170212766,
+          "n_class": 405,
+          "n_test": 2115
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "class_name": "Non-Blond Hair",
+          "average_precision": 0.9916925882526662,
+          "prevalence": 0.8085106382978723,
+          "n_class": 1710,
+          "n_test": 2115
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "class_name": "Blond Hair",
+          "average_precision": 0.9161239645925898,
+          "prevalence": 0.19148936170212766,
+          "n_class": 405,
+          "n_test": 2115
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "class_name": "Non-Blond Hair",
+          "average_precision": 0.9922581095974377,
+          "prevalence": 0.8085106382978723,
+          "n_class": 1710,
+          "n_test": 2115
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "class_name": "Blond Hair",
+          "average_precision": 0.9224828489550105,
+          "prevalence": 0.19148936170212766,
+          "n_class": 405,
+          "n_test": 2115
+        }
+      ],
+      "training_history": [
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 1,
+          "train_loss": 0.3067,
+          "train_accuracy": 0.878,
+          "val_loss": 0.2867,
+          "val_accuracy": 0.87,
+          "val_f1": 0.8283
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 2,
+          "train_loss": 0.3184,
+          "train_accuracy": 0.8653,
+          "val_loss": 0.6733,
+          "val_accuracy": 0.8889,
+          "val_f1": 0.8348
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 3,
+          "train_loss": 0.2197,
+          "train_accuracy": 0.9063,
+          "val_loss": 0.2399,
+          "val_accuracy": 0.9182,
+          "val_f1": 0.8807
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 4,
+          "train_loss": 0.182,
+          "train_accuracy": 0.9286,
+          "val_loss": 0.3715,
+          "val_accuracy": 0.9357,
+          "val_f1": 0.9019
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 5,
+          "train_loss": 0.1891,
+          "train_accuracy": 0.9249,
+          "val_loss": 0.1938,
+          "val_accuracy": 0.9102,
+          "val_f1": 0.8745
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 6,
+          "train_loss": 0.1885,
+          "train_accuracy": 0.9258,
+          "val_loss": 0.3096,
+          "val_accuracy": 0.9201,
+          "val_f1": 0.8812
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 7,
+          "train_loss": 0.1796,
+          "train_accuracy": 0.9349,
+          "val_loss": 0.2084,
+          "val_accuracy": 0.895,
+          "val_f1": 0.8558
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 8,
+          "train_loss": 0.1703,
+          "train_accuracy": 0.9307,
+          "val_loss": 0.2913,
+          "val_accuracy": 0.9357,
+          "val_f1": 0.9016
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 9,
+          "train_loss": 0.184,
+          "train_accuracy": 0.9281,
+          "val_loss": 0.326,
+          "val_accuracy": 0.9078,
+          "val_f1": 0.8634
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 10,
+          "train_loss": 0.1518,
+          "train_accuracy": 0.9371,
+          "val_loss": 0.2739,
+          "val_accuracy": 0.9296,
+          "val_f1": 0.8939
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 11,
+          "train_loss": 0.148,
+          "train_accuracy": 0.9374,
+          "val_loss": 0.2949,
+          "val_accuracy": 0.8884,
+          "val_f1": 0.8393
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 12,
+          "train_loss": 0.1548,
+          "train_accuracy": 0.9369,
+          "val_loss": 0.2854,
+          "val_accuracy": 0.9191,
+          "val_f1": 0.8828
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 13,
+          "train_loss": 0.1699,
+          "train_accuracy": 0.9339,
+          "val_loss": 0.2523,
+          "val_accuracy": 0.9182,
+          "val_f1": 0.8809
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 14,
+          "train_loss": 0.1489,
+          "train_accuracy": 0.9384,
+          "val_loss": 0.2422,
+          "val_accuracy": 0.9064,
+          "val_f1": 0.8674
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 15,
+          "train_loss": 0.142,
+          "train_accuracy": 0.9434,
+          "val_loss": 0.5226,
+          "val_accuracy": 0.9291,
+          "val_f1": 0.889
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 16,
+          "train_loss": 0.1456,
+          "train_accuracy": 0.9393,
+          "val_loss": 0.326,
+          "val_accuracy": 0.9362,
+          "val_f1": 0.9
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 17,
+          "train_loss": 0.1412,
+          "train_accuracy": 0.9453,
+          "val_loss": 0.3502,
+          "val_accuracy": 0.905,
+          "val_f1": 0.8529
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 18,
+          "train_loss": 0.1288,
+          "train_accuracy": 0.9479,
+          "val_loss": 0.2619,
+          "val_accuracy": 0.922,
+          "val_f1": 0.8837
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 19,
+          "train_loss": 0.1517,
+          "train_accuracy": 0.9406,
+          "val_loss": 0.2449,
+          "val_accuracy": 0.9182,
+          "val_f1": 0.882
+        },
+        {
+          "k_label": "K=1",
+          "k": 1,
+          "epoch": 20,
+          "train_loss": 0.1325,
+          "train_accuracy": 0.9435,
+          "val_loss": 0.2846,
+          "val_accuracy": 0.9291,
+          "val_f1": 0.8945
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 1,
+          "train_loss": 0.3392,
+          "train_accuracy": 0.8726,
+          "val_loss": 0.2795,
+          "val_accuracy": 0.8378,
+          "val_f1": 0.7946
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 2,
+          "train_loss": 0.2804,
+          "train_accuracy": 0.8765,
+          "val_loss": 0.2413,
+          "val_accuracy": 0.9234,
+          "val_f1": 0.8884
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 3,
+          "train_loss": 0.1961,
+          "train_accuracy": 0.9231,
+          "val_loss": 0.2248,
+          "val_accuracy": 0.9069,
+          "val_f1": 0.8689
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 4,
+          "train_loss": 0.1733,
+          "train_accuracy": 0.9278,
+          "val_loss": 0.2519,
+          "val_accuracy": 0.94,
+          "val_f1": 0.9052
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 5,
+          "train_loss": 0.1799,
+          "train_accuracy": 0.9288,
+          "val_loss": 0.2255,
+          "val_accuracy": 0.8771,
+          "val_f1": 0.8351
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 6,
+          "train_loss": 0.1906,
+          "train_accuracy": 0.9242,
+          "val_loss": 0.2261,
+          "val_accuracy": 0.9201,
+          "val_f1": 0.8822
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 7,
+          "train_loss": 0.1687,
+          "train_accuracy": 0.9284,
+          "val_loss": 0.2279,
+          "val_accuracy": 0.8804,
+          "val_f1": 0.8396
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 8,
+          "train_loss": 0.1716,
+          "train_accuracy": 0.9295,
+          "val_loss": 0.2946,
+          "val_accuracy": 0.9305,
+          "val_f1": 0.8948
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 9,
+          "train_loss": 0.1677,
+          "train_accuracy": 0.932,
+          "val_loss": 0.2251,
+          "val_accuracy": 0.9097,
+          "val_f1": 0.8708
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 10,
+          "train_loss": 0.1619,
+          "train_accuracy": 0.9354,
+          "val_loss": 0.2504,
+          "val_accuracy": 0.8695,
+          "val_f1": 0.8278
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 11,
+          "train_loss": 0.1562,
+          "train_accuracy": 0.9343,
+          "val_loss": 0.214,
+          "val_accuracy": 0.8922,
+          "val_f1": 0.8527
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 12,
+          "train_loss": 0.1997,
+          "train_accuracy": 0.9216,
+          "val_loss": 0.4376,
+          "val_accuracy": 0.8842,
+          "val_f1": 0.8363
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 13,
+          "train_loss": 0.1736,
+          "train_accuracy": 0.9233,
+          "val_loss": 0.3296,
+          "val_accuracy": 0.9135,
+          "val_f1": 0.8732
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 14,
+          "train_loss": 0.164,
+          "train_accuracy": 0.932,
+          "val_loss": 0.2253,
+          "val_accuracy": 0.9083,
+          "val_f1": 0.8708
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 15,
+          "train_loss": 0.1406,
+          "train_accuracy": 0.94,
+          "val_loss": 0.3214,
+          "val_accuracy": 0.9357,
+          "val_f1": 0.9011
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 16,
+          "train_loss": 0.1521,
+          "train_accuracy": 0.9391,
+          "val_loss": 0.3082,
+          "val_accuracy": 0.9329,
+          "val_f1": 0.8966
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 17,
+          "train_loss": 0.1407,
+          "train_accuracy": 0.9429,
+          "val_loss": 0.4229,
+          "val_accuracy": 0.9234,
+          "val_f1": 0.8818
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 18,
+          "train_loss": 0.1866,
+          "train_accuracy": 0.9258,
+          "val_loss": 0.3347,
+          "val_accuracy": 0.9277,
+          "val_f1": 0.8921
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 19,
+          "train_loss": 0.1433,
+          "train_accuracy": 0.9427,
+          "val_loss": 0.25,
+          "val_accuracy": 0.9191,
+          "val_f1": 0.8817
+        },
+        {
+          "k_label": "K=2",
+          "k": 2,
+          "epoch": 20,
+          "train_loss": 0.1433,
+          "train_accuracy": 0.9383,
+          "val_loss": 0.403,
+          "val_accuracy": 0.9277,
+          "val_f1": 0.8896
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 1,
+          "train_loss": 0.3038,
+          "train_accuracy": 0.8826,
+          "val_loss": 0.2586,
+          "val_accuracy": 0.9206,
+          "val_f1": 0.8824
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 2,
+          "train_loss": 0.2455,
+          "train_accuracy": 0.8991,
+          "val_loss": 0.2559,
+          "val_accuracy": 0.9158,
+          "val_f1": 0.875
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 3,
+          "train_loss": 0.2341,
+          "train_accuracy": 0.9031,
+          "val_loss": 0.2803,
+          "val_accuracy": 0.9168,
+          "val_f1": 0.878
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 4,
+          "train_loss": 0.2319,
+          "train_accuracy": 0.9106,
+          "val_loss": 0.2488,
+          "val_accuracy": 0.9352,
+          "val_f1": 0.8992
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 5,
+          "train_loss": 0.1783,
+          "train_accuracy": 0.9306,
+          "val_loss": 0.1957,
+          "val_accuracy": 0.9139,
+          "val_f1": 0.8772
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 6,
+          "train_loss": 0.1755,
+          "train_accuracy": 0.9321,
+          "val_loss": 0.2262,
+          "val_accuracy": 0.9329,
+          "val_f1": 0.8983
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 7,
+          "train_loss": 0.1691,
+          "train_accuracy": 0.9344,
+          "val_loss": 0.2065,
+          "val_accuracy": 0.8894,
+          "val_f1": 0.8502
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 8,
+          "train_loss": 0.1672,
+          "train_accuracy": 0.9339,
+          "val_loss": 0.2728,
+          "val_accuracy": 0.9395,
+          "val_f1": 0.9039
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 9,
+          "train_loss": 0.1728,
+          "train_accuracy": 0.932,
+          "val_loss": 0.2855,
+          "val_accuracy": 0.9139,
+          "val_f1": 0.8709
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 10,
+          "train_loss": 0.1547,
+          "train_accuracy": 0.941,
+          "val_loss": 0.2445,
+          "val_accuracy": 0.8936,
+          "val_f1": 0.8534
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 11,
+          "train_loss": 0.1516,
+          "train_accuracy": 0.9382,
+          "val_loss": 0.2239,
+          "val_accuracy": 0.8936,
+          "val_f1": 0.853
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 12,
+          "train_loss": 0.1595,
+          "train_accuracy": 0.9362,
+          "val_loss": 0.3107,
+          "val_accuracy": 0.9059,
+          "val_f1": 0.8608
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 13,
+          "train_loss": 0.1547,
+          "train_accuracy": 0.9374,
+          "val_loss": 0.2225,
+          "val_accuracy": 0.8993,
+          "val_f1": 0.8589
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 14,
+          "train_loss": 0.1475,
+          "train_accuracy": 0.9425,
+          "val_loss": 0.2794,
+          "val_accuracy": 0.9291,
+          "val_f1": 0.8918
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 15,
+          "train_loss": 0.1947,
+          "train_accuracy": 0.9369,
+          "val_loss": 0.3333,
+          "val_accuracy": 0.9234,
+          "val_f1": 0.8818
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 16,
+          "train_loss": 0.1468,
+          "train_accuracy": 0.9411,
+          "val_loss": 0.468,
+          "val_accuracy": 0.9286,
+          "val_f1": 0.8879
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 17,
+          "train_loss": 0.1436,
+          "train_accuracy": 0.9443,
+          "val_loss": 0.7589,
+          "val_accuracy": 0.9116,
+          "val_f1": 0.8612
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 18,
+          "train_loss": 0.1399,
+          "train_accuracy": 0.9423,
+          "val_loss": 0.2982,
+          "val_accuracy": 0.8827,
+          "val_f1": 0.8392
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 19,
+          "train_loss": 0.1449,
+          "train_accuracy": 0.9429,
+          "val_loss": 0.31,
+          "val_accuracy": 0.9187,
+          "val_f1": 0.8816
+        },
+        {
+          "k_label": "K=3",
+          "k": 3,
+          "epoch": 20,
+          "train_loss": 0.16,
+          "train_accuracy": 0.9345,
+          "val_loss": 0.2745,
+          "val_accuracy": 0.921,
+          "val_f1": 0.8834
+        }
+      ],
+      "timestamp_subgroups": [
+        {
+          "k": 1,
+          "timestamp_present_n": 169,
+          "timestamp_present_positive_rate": 0.9171597633136095,
+          "trained_recall_timestamp_present": 0.9548387096774194,
+          "trained_recall_timestamp_absent": 0.776,
+          "clean_recall_timestamp_absent": 0.908
+        },
+        {
+          "k": 2,
+          "timestamp_present_n": 169,
+          "timestamp_present_positive_rate": 0.9171597633136095,
+          "trained_recall_timestamp_present": 0.9483870967741935,
+          "trained_recall_timestamp_absent": 0.768,
+          "clean_recall_timestamp_absent": 0.908
+        },
+        {
+          "k": 3,
+          "timestamp_present_n": 169,
+          "timestamp_present_positive_rate": 0.9171597633136095,
+          "trained_recall_timestamp_present": 0.9548387096774194,
+          "trained_recall_timestamp_absent": 0.764,
+          "clean_recall_timestamp_absent": 0.908
+        }
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [],
+  "package_info": {
+    "analysis_as_of": "18 August 2026",
+    "audience": "technical",
+    "delivery_mode": "portable_html"
+  }
+}

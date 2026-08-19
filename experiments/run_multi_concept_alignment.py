@@ -113,7 +113,7 @@ def _write_run_manifest(
 
 @hydra.main(
     version_base=None,
-    config_path="../experiment_configs",
+    config_path="../configs",
     config_name="multi_concept_alignment",
 )
 def run(cfg: DictConfig) -> None:
