@@ -6,8 +6,8 @@ from experiments.utils.train_cavs import train_cavs
 from pathlib import Path
 from typing import Tuple
 from hydra.utils import instantiate
-from experiments.utils.utils import get_save_dir
-from experiments.utils.activations import extract_latents
+from experiments.utils.utils import get_dataset_cache_namespace, get_save_dir
+from experiments.utils.activations import extract_latents, limit_preprocessing_dataset
 from experiments.model_correction.utils import load_base_model
 from utils.cav import compute_cavs, build_cav_cache_path
 from experiments.utils.cav_model_utils import (
@@ -46,7 +46,7 @@ def load_base_cav_model(
     cfg: DictConfig, activations: torch.Tensor, labels: torch.Tensor
 ) -> nn.Module:
     cav_cache_path = build_cav_cache_path(
-        dataset_name=cfg.dataset.name,
+        dataset_name=get_dataset_cache_namespace(cfg.dataset),
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
@@ -81,6 +81,7 @@ def run_preprocessing(config: DictConfig) -> Tuple[torch.Tensor, torch.Tensor]:
     log.info("Running preprocessing to extract activations and labels.")
     device = torch.device(config.train.device)
     dataset = instantiate(config.dataset)
+    dataset = limit_preprocessing_dataset(config, dataset)
     num_classes = len(dataset.classes)
     log.info(f"Loading {config.model.name} at '{config.model.ckpt_path}'")
     model = load_base_model(config, num_classes, device)

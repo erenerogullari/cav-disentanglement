@@ -35,6 +35,11 @@ def get_target_concepts(cav_cfg: DictConfig | Dict[str, Any]) -> list[str]:
     return [str(concept) for concept in _as_list(raw_targets)]
 
 
+def get_dataset_cache_namespace(dataset_cfg: DictConfig | Dict[str, Any]) -> str:
+    """Return an optional variant-aware namespace for activation/CAV caches."""
+    return str(dataset_cfg.get("cache_namespace", dataset_cfg.get("name")))
+
+
 def format_orthogonality_config_name(
     alpha: Any,
     beta: Any = None,

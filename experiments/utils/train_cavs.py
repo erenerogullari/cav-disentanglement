@@ -32,7 +32,11 @@ from experiments.utils.cav_model_utils import (
     instantiate_cav_model,
     validate_precomputed_g_sae_cache,
 )
-from experiments.utils.activations import extract_latents, get_dataset_cache_identity
+from experiments.utils.activations import (
+    extract_latents,
+    get_dataset_cache_identity,
+    limit_preprocessing_dataset,
+)
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
@@ -108,7 +112,11 @@ def train_test_split(cfg, dataset, x_latent, labels):
         test_split=cfg.train.test_ratio,
         seed=cfg.train.random_seed,
     )
-    full_cav_experiments = ["concept_alignment", "model_correction"]
+    full_cav_experiments = [
+        "concept_alignment",
+        "multi_concept_alignment",
+        "model_correction",
+    ]
     train_data = (
         x_latent
         if cfg.experiment.name in full_cav_experiments
@@ -288,6 +296,7 @@ def train_cavs(
 
     log.info(f"Loading dataset: {cfg.dataset.name}")
     dataset = instantiate(cfg.dataset)
+    dataset = limit_preprocessing_dataset(cfg, dataset)
     concept_names = dataset.get_concept_names()
 
     if encodings is not None and labels is not None:

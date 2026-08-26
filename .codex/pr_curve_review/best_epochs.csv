@@ -1,0 +1,4 @@
+k,best_epoch,best_val_accuracy
+1,16,0.9362
+2,4,0.94
+3,8,0.9395
