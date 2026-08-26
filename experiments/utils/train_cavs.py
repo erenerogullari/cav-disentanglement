@@ -32,7 +32,7 @@ from experiments.utils.cav_model_utils import (
     instantiate_cav_model,
     validate_precomputed_g_sae_cache,
 )
-from experiments.utils.activations import extract_latents
+from experiments.utils.activations import extract_latents, get_dataset_cache_identity
 from hydra.utils import get_original_cwd
 from pathlib import Path
 
@@ -47,6 +47,10 @@ def seed_everything(seed: Optional[int]) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def uses_final_epoch_checkpoint(exit_criterion: Any) -> bool:
+    return exit_criterion is None or str(exit_criterion).lower() in {"none", "null"}
 
 
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
@@ -95,7 +99,7 @@ def _load_model(
         loader_kwargs["device"] = device
 
     model = model_loader(**loader_kwargs)
-    return model.to(device)
+    return model.to(device).eval()
 
 
 def train_test_split(cfg, dataset, x_latent, labels):
@@ -314,7 +318,7 @@ def train_cavs(
     # Initialize CAV model and weights (alpha)
     log.info(f"Initializing CAV model: {cfg.cav.name}")
     cav_cache_path = build_cav_cache_path(
-        dataset_name=cfg.dataset.name,
+        dataset_name=get_dataset_cache_identity(cfg, dataset),
         model_name=cfg.model.name,
         layer_name=cfg.cav.layer,
         cav_type=cfg.cav.name,
@@ -371,29 +375,44 @@ def train_cavs(
     best_cavs = copy.deepcopy(cav_model).to("cpu")
     early_exit_epoch = None
 
+    exit_criterion = cfg.cav.get("exit_criterion", None)
+    final_epoch_mode = uses_final_epoch_checkpoint(exit_criterion)
+    num_epochs = int(cfg.train.num_epochs)
+    if num_epochs < 0:
+        raise ValueError(f"train.num_epochs must be non-negative, got {num_epochs}.")
+    num_updates = num_epochs if final_epoch_mode else num_epochs + 1
+
+    def record_validation_metrics():
+        nonlocal best_uniqueness, best_auc, early_exit_epoch, best_cavs
+        metrics = eval_epoch(val_latents, val_labels, cav_model, device)
+        auc_scores_history.append(metrics["auc_scores"])
+        uniqueness_history.append(metrics["uniqueness"])
+        avg_precision_hist.append(metrics["avg_precision"])
+        confusion_matrix_history.append(metrics["confusion_matrix"])
+        mean_auc = float(np.mean(metrics["auc_scores"]))
+        mean_uniqueness = float(np.mean(metrics["uniqueness"]))
+
+        if not final_epoch_mode and (
+            (
+                exit_criterion == "orthogonality"
+                and mean_uniqueness > best_uniqueness + uniqueness_epsilon
+            )
+            or (
+                exit_criterion == "auc"
+                and mean_auc > best_auc + auc_epsilon
+            )
+        ):
+            best_uniqueness = mean_uniqueness
+            best_auc = mean_auc
+            early_exit_epoch = epoch
+            best_cavs = copy.deepcopy(cav_model).to("cpu")
+        return mean_auc, mean_uniqueness
+
     ### MAIN LOOP ###
-    for epoch in tqdm(range(cfg.train.num_epochs + 1), desc="Epochs"):
+    for epoch in tqdm(range(num_updates), desc="Epochs"):
         # Evaluation every 10 epochs
         if epoch % 10 == 0:
-            metrics = eval_epoch(val_latents, val_labels, cav_model, device)
-            metrics = eval_epoch(val_latents, val_labels, cav_model, device)
-            auc_scores_history.append(metrics["auc_scores"])
-            uniqueness_history.append(metrics["uniqueness"])
-            avg_precision_hist.append(metrics["avg_precision"])
-            confusion_matrix_history.append(metrics["confusion_matrix"])
-            mean_auc = np.mean(metrics["auc_scores"])
-            mean_uniqueness = np.mean(metrics["uniqueness"])
-
-            if (
-                cfg.cav.exit_criterion == "orthogonality"
-                and mean_uniqueness > best_uniqueness + uniqueness_epsilon
-            ) or (
-                cfg.cav.exit_criterion == "auc" and mean_auc > best_auc + auc_epsilon
-            ):
-                best_uniqueness = mean_uniqueness
-                best_auc = mean_auc
-                early_exit_epoch = epoch
-                best_cavs = copy.deepcopy(cav_model).to("cpu")
+            mean_auc, mean_uniqueness = record_validation_metrics()
 
         # Train for one epoch
         epoch_cav_loss, epoch_orth_loss = train_epoch(
@@ -408,8 +427,15 @@ def train_cavs(
             )
             tqdm.write(f"AuC Score: {mean_auc:.4f} | Uniqueness: {mean_uniqueness:.4f}")  # type: ignore
 
-    log.info(f"Using exit criterion: {cfg.cav.exit_criterion}")
-    if cfg.cav.exit_criterion in ["orthogonality", "auc"]:
+    log.info(f"Using exit criterion: {exit_criterion}")
+    if final_epoch_mode:
+        # The concept-leakage experiment uses the state after exactly
+        # ``num_epochs`` updates rather than validation-based model selection.
+        record_validation_metrics()
+        best_cavs = copy.deepcopy(cav_model).to("cpu")
+        early_exit_epoch = num_epochs
+        log.info("Saving CAVs from the final epoch after %s updates.", num_epochs)
+    elif exit_criterion in ["orthogonality", "auc"]:
         log.info(
             f"Early exit at epoch: {early_exit_epoch} with Uniqueness: {best_uniqueness:.4f} and AUC: {best_auc:.4f}"
         )

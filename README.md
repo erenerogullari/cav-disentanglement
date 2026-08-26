@@ -108,10 +108,120 @@ This repository contains three primary experiment entry points. All use Hydra co
    bash scripts/run_model_correction.sh
    ```
 
+4. **COCO Dining-6 concept leakage**
+
+   Install `pycocotools`, download the official COCO 2017 images and instance
+   annotations, and expose the root directory through `COCO_ROOT`:
+
+   ```bash
+   export COCO_ROOT=/path/to/coco
+   python -m experiments.run_concept_leakage cav.alpha=0.1
+   # Or run the default CAV-type/alpha sweep:
+   bash scripts/run_concept_leakage.sh
+   ```
+
+   The root must contain `train2017/`, `val2017/`,
+   `annotations/instances_train2017.json`, and
+   `annotations/instances_val2017.json`. The default PoC uniformly samples
+   10,000 training images and evaluates at most 100 positive validation images
+   per Dining-6 concept.
+
+### Local configuration for concept leakage
+
+`configs/` is intentionally ignored in this repository. Create these local
+Hydra files before running the experiment (the implementation does not require
+machine-specific paths in tracked files).
+
+`configs/concept_leakage.yaml`:
+
+```yaml
+defaults:
+  - hardware@train: local
+  - dataset: coco
+  - model: vgg16_ssd_coco
+  - cav_model@cav: pattern_cav
+  - _self_
+
+experiment:
+  name: concept_leakage
+  out: results/${experiment.name}/${dataset.name}_${dataset.concept_set}/${model.name}_${cav.layer}/${cav.name}/epochs${train.num_epochs}_train${dataset.max_samples}_subsetseed${dataset.subset_seed}/seed${train.random_seed}
+
+train:
+  learning_rate: 0.0001
+  num_epochs: 200
+  val_ratio: 0.1
+  test_ratio: 0.0
+  random_seed: 42
+
+cav:
+  cav_mode: max
+  layer: features.28
+  alpha: 0.1
+  beta: null
+  target_concepts: []
+  optimal_init: false
+  exit_criterion: null
+
+evaluation:
+  device: ${train.device}
+  batch_size: ${train.batch_size}
+  split: val2017
+  max_samples_per_concept: 100
+  overlays_per_concept: 5
+  random_seed: ${train.random_seed}
+```
+
+`configs/dataset/coco.yaml`:
+
+```yaml
+_target_: datasets.get_coco_dataset
+name: coco
+data_paths: ["${oc.env:COCO_ROOT}"]
+normalize_data: true
+image_size: 300
+split: train2017
+concept_set: dining6
+concepts: null
+max_samples: 10000
+subset_seed: 42
+```
+
+For another concept set, override `dataset.concepts` with category names and
+set `dataset.concept_set=custom` so the result directory remains distinct.
+
+`configs/model/vgg16_ssd_coco.yaml`:
+
+```yaml
+name: vgg16_ssd_coco
+n_class: null
+pretrained: true
+ckpt_path: null
+```
+
+Create `configs/hardware/local.yaml` with `device`, `num_workers`, and
+`batch_size` (the PoC default is batch size 16). Create the five CAV configs as:
+
+```yaml
+# configs/cav_model/pattern_cav.yaml
+_target_: cav_models.PatternCAV
+name: pattern_cav
+
+# Replace both values for the remaining files:
+# cav_models.MultiPatternCAV / multi_cav
+# cav_models.SvmCAV          / svm_cav
+# cav_models.LogCAV          / log_cav
+# cav_models.RidgeCAV        / ridge_cav
+```
+
+Each run saves final-epoch CAVs, per-image localization and leakage CSVs,
+directed leakage/count matrices, a leakage figure, and deterministic example
+overlays under `results/concept_leakage/`.
+
 Results are written to `results/{experiment.name}/...` as specified in the corresponding config file.
 
-## Extracting Heatmaps (for CelebA only)
-Heatmaps are generated as part of the CAV disentanglement and model correction pipelines.
+## Extracting Heatmaps
+Heatmaps are generated as part of the CAV disentanglement, model correction,
+and COCO concept-leakage pipelines.
 To enable or customize them, adjust the localization/heatmap settings in the relevant config.
 
 1. Update localization settings in `configs/cav_disentanglement.yaml` or heatmap settings in `configs/model_correction.yaml`.

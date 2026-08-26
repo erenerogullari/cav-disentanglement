@@ -24,6 +24,13 @@ import logging
 log = logging.getLogger(__name__)
 
 
+def get_dataset_cache_identity(cfg: DictConfig, dataset) -> str:
+    identity = getattr(dataset, "cache_identity", None)
+    if callable(identity):
+        identity = identity()
+    return str(identity) if identity else str(cfg.dataset.name)
+
+
 def _get_features(batch, layer_name, attribution, composite, cav_mode, device):
     if cav_mode not in {"full", "max", "avg"}:
         raise ValueError(
@@ -85,7 +92,7 @@ def extract_latents(
     cache_dir = (
         Path(get_original_cwd())
         / "variables"
-        / f"{cfg.dataset.name}"
+        / get_dataset_cache_identity(cfg, dataset)
         / f"{cfg.model.name}"
     )
     cache_dir.mkdir(parents=True, exist_ok=True)

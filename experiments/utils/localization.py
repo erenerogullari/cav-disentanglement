@@ -33,6 +33,31 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+class _PrefixEpsilonPlusFlat(EpsilonPlusFlat):
+    """Apply LRP rules only through the requested attribution start layer.
+
+    Recent Torch/Zennit versions can invoke input hooks for layers after a CRP
+    ``start_layer`` even though those layers receive no backward signal. Limiting
+    rule registration to the relevant model prefix avoids those dangling hooks.
+    """
+
+    def __init__(self, stop_layer: str, canonizers: Sequence[Canonizer]):
+        self.stop_layer = stop_layer
+        super().__init__(canonizers=canonizers)
+
+    def mapping(self, ctx, name, module):
+        if ctx.get("past_stop_layer", False):
+            return None
+        if name == self.stop_layer:
+            # CRP records the start-layer tensor before the composite replaces
+            # that module's output. Registering a rule on the same module would
+            # therefore leave its input hook without a corresponding output hook.
+            ctx["past_stop_layer"] = True
+            return None
+        hook = super().mapping(ctx, name, module)
+        return hook
+
+
 def _resolve_checkpoint_path(cfg_model: DictConfig, dataset_name: str) -> Path:
     checkpoint_path = cfg_model.get("ckpt_path", None)
     if checkpoint_path is None:
@@ -87,7 +112,7 @@ def get_localization(
             .cpu()
         )
 
-    composite = EpsilonPlusFlat(canonizers)
+    composite = _PrefixEpsilonPlusFlat(layer, canonizers)
 
     attribution = CondAttribution(model)
     x = x.detach().to(device)
