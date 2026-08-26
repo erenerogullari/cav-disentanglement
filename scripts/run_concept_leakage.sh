@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${COCO_ROOT:?Set COCO_ROOT to the directory containing train2017, val2017, and annotations}"
+export COCO_ROOT=/media/erogullari/datasets/coco2017
 
-HARDWARE="local"              # local or workstation
+HARDWARE="workstation"              # local or workstation
 MODEL="vgg16_ssd_coco"
 DATASET="coco"
-LAYER="features.28"
+LAYER="features.29"
 CAV_MODE="max"
 
 CAV_MODELS=("pattern_cav" "multi_cav" "svm_cav" "log_cav" "ridge_cav")
